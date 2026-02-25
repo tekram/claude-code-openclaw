@@ -3,8 +3,8 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Claude Dash",
-  description: "Claude Code session dashboard. See what is active, paused, or interrupted.",
+  title: "Claude Code + OpenClaw",
+  description: "Claude Code session dashboard with OpenClaw notifications. See what's active, paused, or interrupted — get alerted on your phone.",
 };
 
 const sans = IBM_Plex_Sans({
