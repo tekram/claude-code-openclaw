@@ -55,6 +55,40 @@ Unknown directories fall back to the directory basename.
 
 Sessions are logged to `~/.openclaw/workspace/sessions.log`. You can customize the log path with the `CLAUDE_DASH_LOG_PATH` environment variable.
 
+## Notifications (Optional)
+
+Push notifications to Telegram, WhatsApp, or any channel you have configured in OpenClaw.
+
+**Requirements:** OpenClaw must be installed and its gateway running.
+
+### Setup
+
+1. Copy the notification watcher:
+   ```bash
+   cp hooks/notification-watcher.js ~/.openclaw/workspace/notification-watcher.js
+   ```
+
+2. Add a cron entry for delayed notifications (e.g. "notify after 10 min waiting"):
+   ```bash
+   # In your crontab (crontab -e):
+   */5 * * * * node ~/.openclaw/workspace/notification-watcher.js
+   ```
+
+3. Open the dashboard at `http://localhost:3000/settings` and configure which events you want to be notified about. Channels are auto-discovered from your OpenClaw config — no tokens to copy.
+
+### What triggers a notification
+
+| Rule | When |
+|---|---|
+| `question` | Claude used `AskUserQuestion` — it's waiting for your answer |
+| `bash` | Claude needs permission to run a bash command |
+| `file` | Claude needs permission to write or edit a file |
+| `done` | Session marked complete (via `active-sessions.js done`) |
+| `crash` | Session exited unexpectedly while active or paused |
+| `start` | New Claude Code session started |
+
+Each rule can be set to fire immediately or only after a configurable delay (useful for `bash` — you don't need a ping every time Claude runs a command, only if you've been away a while).
+
 ## Session Events
 
 | Event | When |

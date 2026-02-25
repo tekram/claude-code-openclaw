@@ -12,9 +12,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 
 const LOG_PATH = path.join(__dirname, 'sessions.log');
 const SESSION_OWNER_DIR = path.join(__dirname, '.session-owners');
+const OPENCLAW_CONFIG_PATH = path.join(__dirname, '..', 'openclaw.json');
+const NOTIF_PREFS_PATH = path.join(__dirname, 'claude-dash-notifications.json');
 
 const DIR_TO_PROJECT = {
   'agentic-trading': 'agentic-trading',
@@ -88,6 +91,138 @@ function getSessionOwner(project) {
 function clearSessionOwner(project) {
   const ownerPath = path.join(SESSION_OWNER_DIR, `${project}.json`);
   try { fs.unlinkSync(ownerPath); } catch {}
+}
+
+// --- Notification helpers ---
+
+function readNotificationPrefs() {
+  try {
+    return JSON.parse(fs.readFileSync(NOTIF_PREFS_PATH, 'utf-8'));
+  } catch {
+    return null; // not configured — skip all notifications
+  }
+}
+
+function readGatewayConfig() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8'));
+    const port = (cfg.gateway && cfg.gateway.port) || 18789;
+    const token = (cfg.gateway && cfg.gateway.auth && cfg.gateway.auth.token) || '';
+    return { url: `http://127.0.0.1:${port}`, token };
+  } catch {
+    return null;
+  }
+}
+
+function getPendingNotifPath(project) {
+  return path.join(SESSION_OWNER_DIR, `${project}.pending-notif.json`);
+}
+
+function writePendingNotif(project, type, message, minMinutes) {
+  ensureOwnerDir();
+  try {
+    fs.writeFileSync(getPendingNotifPath(project), JSON.stringify({
+      type, message, minMinutes, timestamp: Date.now(),
+    }), 'utf-8');
+  } catch {}
+}
+
+function clearPendingNotif(project) {
+  try { fs.unlinkSync(getPendingNotifPath(project)); } catch {}
+}
+
+// Fire-and-forget: spawn detached child to POST to OpenClaw /hooks/agent
+// OpenClaw handles all channel delivery — logged in gateway dashboard
+function fireViaOpenClaw(message, prefs, ocConfig) {
+  const gateway = readGatewayConfig();
+  if (!gateway || !prefs.to || !prefs.channel) return;
+
+  // Use hooks token if configured, fall back to gateway auth token
+  const hooksToken = (ocConfig && ocConfig.hooks && ocConfig.hooks.token) || gateway.token;
+
+  // Wrap message so the agent relays it verbatim rather than rephrasing
+  const prompt = `Say exactly this to the user, nothing else: ${message}`;
+  const payload = JSON.stringify({
+    message: prompt,
+    deliver: true,
+    channel: prefs.channel,
+    to: prefs.to,
+    name: 'ClaudeDashNotif',
+  });
+  const port = (gateway.url.match(/:(\d+)$/) || [])[1] || '18789';
+  const script = [
+    "const http=require('http');",
+    "const b=process.env._NB;",
+    "const r=http.request({hostname:'127.0.0.1',port:+process.env._NP,path:'/hooks/agent',method:'POST',",
+    "headers:{'Authorization':'Bearer '+process.env._NT,'Content-Type':'application/json','Content-Length':Buffer.byteLength(b)}});",
+    "r.on('error',()=>{});r.write(b);r.end();",
+  ].join('');
+  try {
+    const child = spawn(process.execPath, ['-e', script], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: { _NB: payload, _NT: hooksToken, _NP: port },
+    });
+    child.unref();
+  } catch {}
+}
+
+// Read raw openclaw config for channel credentials (bot tokens etc.)
+function readOpenClawConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+// Fire-and-forget direct Telegram Bot API (used when deliveryMode === 'direct')
+function fireDirectTelegramAsync(message, prefs, ocConfig) {
+  const botToken = ocConfig && ocConfig.channels && ocConfig.channels.telegram && ocConfig.channels.telegram.botToken;
+  if (!botToken || !prefs.to) return;
+  const payload = JSON.stringify({ chat_id: prefs.to, text: message });
+  const script = [
+    "const https=require('https');",
+    "const b=process.env._NB;",
+    "const tok=process.env._NT;",
+    "const r=https.request({hostname:'api.telegram.org',path:'/bot'+tok+'/sendMessage',method:'POST',",
+    "headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(b)}});",
+    "r.on('error',()=>{});r.write(b);r.end();",
+  ].join('');
+  try {
+    const child = spawn(process.execPath, ['-e', script], {
+      detached: true, stdio: 'ignore', windowsHide: true,
+      env: { _NB: payload, _NT: botToken },
+    });
+    child.unref();
+  } catch {}
+}
+
+// Check prefs and either fire immediately or write a pending file for the watcher
+function maybeNotify(project, notifType, message) {
+  const prefs = readNotificationPrefs();
+  if (!prefs || !prefs.rules || !prefs.to || !prefs.channel) return;
+
+  const rule = prefs.rules.find(r => r.type === notifType);
+  if (!rule || !rule.enabled) return;
+
+  const ocConfig = readOpenClawConfig();
+
+  if (rule.minMinutes === 0) {
+    fireNotificationAsync(message, prefs, ocConfig);
+  } else {
+    writePendingNotif(project, notifType, message, rule.minMinutes);
+  }
+}
+
+// Dispatch to the right delivery function based on deliveryMode pref
+function fireNotificationAsync(message, prefs, ocConfig) {
+  if (prefs.deliveryMode === 'direct' && prefs.channel === 'telegram') {
+    fireDirectTelegramAsync(message, prefs, ocConfig);
+    return;
+  }
+  fireViaOpenClaw(message, prefs, ocConfig);
 }
 
 // Fast path: read cached status from owner file, no log parsing needed.
@@ -255,6 +390,14 @@ function getToolPauseReason(hookData) {
   return `Permission needed: ${tool}`;
 }
 
+// Map tool name to notification rule type
+function getNotifType(toolName) {
+  if (toolName === 'AskUserQuestion') return 'question';
+  if (toolName === 'Bash') return 'bash';
+  if (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') return 'file';
+  return null;
+}
+
 function handlePreToolUse(hookData) {
   if (!PERMISSION_TOOLS.has(hookData.tool_name)) return;
 
@@ -264,8 +407,40 @@ function handlePreToolUse(hookData) {
   // Only pause if currently active (idempotent)
   if (status !== 'active') return;
 
-  logSession('PAUSED', project, getToolPauseReason(hookData));
+  const reason = getToolPauseReason(hookData);
+  logSession('PAUSED', project, reason);
   updateCachedStatus(project, 'paused');
+
+  // Notify user if configured
+  const notifType = getNotifType(hookData.tool_name);
+  if (notifType) {
+    const msg = buildNotifMessage(project, notifType, hookData);
+    maybeNotify(project, notifType, msg);
+  }
+}
+
+function buildNotifMessage(project, notifType, hookData) {
+  const tool = hookData.tool_name;
+  const input = hookData.tool_input || {};
+
+  if (notifType === 'question') {
+    const q = input.questions && input.questions[0] && input.questions[0].question;
+    if (q) return `❓ ${project}: Claude is asking —\n"${q.length > 200 ? q.substring(0, 197) + '...' : q}"`;
+    return `❓ ${project}: Claude is waiting for your input`;
+  }
+
+  if (notifType === 'bash') {
+    const cmd = input.command || '';
+    const short = cmd.length > 120 ? cmd.substring(0, 117) + '...' : cmd;
+    return `⏸ ${project}: Permission needed —\nbash \`${short}\``;
+  }
+
+  if (notifType === 'file') {
+    const file = input.file_path ? path.basename(input.file_path) : 'a file';
+    return `📄 ${project}: Permission needed — ${tool.toLowerCase()} ${file}`;
+  }
+
+  return `⏸ ${project}: Claude needs your attention`;
 }
 
 // Write latest activity to a state file (overwritten each time, no log bloat)
@@ -314,13 +489,18 @@ function handlePostToolUse(hookData) {
   // Always update latest activity (lightweight state file, not the log)
   writeLatestActivity(project, describeToolActivity(hookData));
 
-  // Only log RESUMED for permission tools when paused
+  // Only permission tools affect PAUSED/RESUMED state
   if (!PERMISSION_TOOLS.has(hookData.tool_name)) return;
 
   const status = getCurrentStatus(project);
-  if (status !== 'paused') return;
+  if (status === 'paused') {
+    logSession('RESUMED', project);
+    clearPendingNotif(project);
+  }
 
-  logSession('RESUMED', project);
+  // Always update owner file to active for permission tools — even if getCurrentStatus
+  // returned unexpected value (e.g. race condition or owner file read error). This ensures
+  // the dashboard's owner-file override check can detect false-paused states.
   updateCachedStatus(project, 'active');
 }
 
@@ -343,6 +523,8 @@ function handleUserPromptSubmit(hookData) {
     // User answered a question or typed while paused
     logSession('RESUMED', project, promptSummary);
     updateCachedStatus(project, 'active');
+    // Cancel any pending delayed notification — user is back
+    clearPendingNotif(project);
   } else if (status === 'active') {
     // Heartbeat to keep session alive (prevents stale timeout conversion)
     logSession('HEARTBEAT', project, promptSummary);
@@ -379,6 +561,13 @@ function handleSessionEnd(hookData) {
   const label = EXIT_LABELS[reason] || `Session ended (${reason})`;
   logSession('EXIT', project, label);
   clearSessionOwner(project);
+
+  // Crash notification: fire if session died while active/paused and user didn't cleanly exit
+  const cleanExitReasons = new Set(['prompt_input_exit', 'clear']);
+  if (!cleanExitReasons.has(reason) && (status === 'active' || status === 'paused')) {
+    maybeNotify(project, 'crash', `💀 ${project}: Session crashed or interrupted`);
+  }
+  clearPendingNotif(project);
 }
 
 // Read stdin and dispatch
