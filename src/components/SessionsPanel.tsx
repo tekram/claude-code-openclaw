@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Activity, Clock, AlertCircle, CheckCircle, XCircle, RefreshCw, X, Check, Download, BarChart3, StickyNote } from 'lucide-react';
+import { Activity, Clock, AlertCircle, CheckCircle, XCircle, RefreshCw, X, Check, Download, BarChart3, StickyNote, Play } from 'lucide-react';
 import type { Session, SessionsData } from '@/types/sessions';
-import { dismissSession, markSessionDone, exportSessions } from '@/lib/sessions/actions';
+import { dismissSession, markSessionDone, exportSessions, resumeSession } from '@/lib/sessions/actions';
 import {
   formatDuration,
   formatRelativeTime,
@@ -12,7 +12,7 @@ import {
   getReasonColor,
 } from '@/lib/sessions/formatting';
 
-const POLL_INTERVAL = 20_000;
+const POLL_INTERVAL = 10_000;
 
 const formatTime = (timestamp: string) => {
   try {
@@ -86,6 +86,23 @@ export const SessionsPanel = () => {
     } catch (err) {
       console.error('Error dismissing session:', err);
       alert('Failed to dismiss session');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [fetchSessions]);
+
+  const handleResume = useCallback(async (project: string) => {
+    setActionLoading(project);
+    try {
+      const result = await resumeSession(project);
+      if (result.success) {
+        await fetchSessions();
+      } else {
+        alert(`Failed to resume: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('Error resuming session:', err);
+      alert('Failed to resume session');
     } finally {
       setActionLoading(null);
     }
@@ -243,18 +260,42 @@ export const SessionsPanel = () => {
               {data.paused.map((session, i) => (
                 <div
                   key={`${session.project}-paused-${i}`}
-                  className="bg-yellow-500/15 border border-yellow-500/30 rounded-md p-3"
+                  className="bg-yellow-500/15 border border-yellow-500/30 rounded-md p-3 group"
                 >
-                  <p className="text-xs font-semibold">{session.project}</p>
-                  {session.details && (
-                    <p className="text-xs text-yellow-800 dark:text-yellow-300 mt-1">
-                      {session.details}
-                    </p>
-                  )}
-                  <SessionNotes notes={session.notes} />
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    Started: {formatTime(session.startTime)}
-                  </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold">{session.project}</p>
+                      {session.details && (
+                        <p className="text-xs text-yellow-800 dark:text-yellow-300 mt-1 line-clamp-2">
+                          {session.details}
+                        </p>
+                      )}
+                      <SessionNotes notes={session.notes} />
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Paused {formatRelativeTime(session.lastActivityTime || session.startTime)} · started {formatTime(session.startTime)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <button
+                        type="button"
+                        className="ui-btn-icon h-6 w-6 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
+                        onClick={() => handleResume(session.project)}
+                        disabled={actionLoading === session.project}
+                        title="Mark as active (task finished)"
+                      >
+                        <Play className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-btn-icon h-6 w-6 !bg-gray-500/20 hover:!bg-gray-500/30 text-gray-700 dark:text-gray-400"
+                        onClick={() => handleDismiss(session.project)}
+                        disabled={actionLoading === session.project}
+                        title="Dismiss"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

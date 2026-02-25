@@ -10,7 +10,8 @@ const LOG_PATH = process.env.CLAUDE_DASH_LOG_PATH || path.join(
   "sessions.log"
 );
 
-const STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours
+const STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours — active sessions
+const PAUSED_STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 min — paused sessions (hook missed exit)
 const HIDE_OLD_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PERMISSION_PAUSE_GRACE_MS = 10_000; // 10s grace for auto-approved tool permissions
 const ACTIVITY_STALE_MS = 5 * 60 * 1000; // 5 min — ignore activity files older than this
@@ -205,13 +206,36 @@ export async function GET() {
       }
     }
 
-    // Auto-convert stale: any active/paused session with no activity for 4+ hours → exited with timeout
+    // Owner-file override: if the log says "paused" but the hook's owner file says "active",
+    // the PostToolUse ran and updated the owner file but failed to log RESUMED (race/crash).
+    // Trust the owner file in this case.
+    for (const session of allSessions) {
+      if (session.status === 'paused') {
+        try {
+          const ownerPath = path.join(SESSION_OWNER_DIR, `${session.project}.json`);
+          if (existsSync(ownerPath)) {
+            const owner = JSON.parse(readFileSync(ownerPath, 'utf-8'));
+            const pausedAt = parseTimestamp(session.lastActivityTime || session.startTime);
+            if (owner.status === 'active' && owner.ts > pausedAt) {
+              session.status = 'active';
+              if (session.details?.startsWith('Permission needed:') || session.details === 'waiting for input') {
+                session.details = '';
+              }
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    // Auto-convert stale sessions → exited with timeout
+    // Paused sessions use a shorter threshold (30 min) since a hook-missed-exit leaves them stuck
     for (const session of allSessions) {
       if (session.status === 'active' || session.status === 'paused') {
         const lastMs = parseTimestamp(session.lastActivityTime || session.startTime);
         const inactiveMs = now - lastMs;
+        const threshold = session.status === 'paused' ? PAUSED_STALE_THRESHOLD_MS : STALE_THRESHOLD_MS;
 
-        if (lastMs > 0 && inactiveMs > STALE_THRESHOLD_MS) {
+        if (lastMs > 0 && inactiveMs > threshold) {
           session.status = 'exited';
           session.endTime = session.lastActivityTime || session.startTime;
           session.interruptReason = 'timeout';
@@ -305,6 +329,10 @@ export async function POST(request: Request) {
     switch (action) {
       case 'dismiss':
         logSessionAction('DISMISSED', project, details || 'User dismissed');
+        break;
+
+      case 'resume':
+        logSessionAction('RESUMED', project, details || 'Resumed from UI');
         break;
 
       case 'markDone':

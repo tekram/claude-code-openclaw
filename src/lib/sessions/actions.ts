@@ -3,7 +3,7 @@
  * Communicates with POST /api/sessions endpoint
  */
 
-export type SessionAction = 'dismiss' | 'markDone' | 'addNote';
+export type SessionAction = 'dismiss' | 'markDone' | 'addNote' | 'resume';
 
 export interface SessionActionRequest {
   action: SessionAction;
@@ -72,6 +72,33 @@ export async function markSessionDone(
     return await response.json();
   } catch (error) {
     console.error('Error marking session done:', error);
+    return { success: false, error: 'Network error' };
+  }
+}
+
+/**
+ * Force-resume a stuck paused session (logs RESUMED to the sessions log)
+ */
+export async function resumeSession(project: string): Promise<SessionActionResponse> {
+  try {
+    const response = await fetch('/api/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'resume',
+        project,
+        details: 'Resumed from UI',
+      } as SessionActionRequest),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      return { success: false, error: errorData.error || 'Failed to resume session' };
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error resuming session:', error);
     return { success: false, error: 'Network error' };
   }
 }
