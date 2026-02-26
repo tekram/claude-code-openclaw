@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Activity, Clock, AlertCircle, CheckCircle, XCircle, RefreshCw, X, Check, Download, BarChart3, StickyNote, Play } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Activity, Clock, AlertCircle, CheckCircle, XCircle, RefreshCw, X, Check, Download, BarChart3, StickyNote, Play, ListTodo } from 'lucide-react';
 import type { Session, SessionsData } from '@/types/sessions';
 import { dismissSession, markSessionDone, exportSessions, resumeSession } from '@/lib/sessions/actions';
 import {
@@ -11,8 +11,6 @@ import {
   getReasonLabel,
   getReasonColor,
 } from '@/lib/sessions/formatting';
-
-const POLL_INTERVAL = 10_000;
 
 const formatTime = (timestamp: string) => {
   try {
@@ -44,12 +42,24 @@ const SessionNotes = ({ notes }: { notes?: string[] }) => {
   if (!notes || notes.length === 0) return null;
   return (
     <div className="mt-1.5 space-y-0.5">
-      {notes.map((note, i) => (
-        <div key={i} className="flex items-start gap-1 text-[10px] text-muted-foreground">
-          <StickyNote className="w-2.5 h-2.5 mt-0.5 shrink-0 text-amber-500/70" />
-          <span className="line-clamp-2">{note}</span>
-        </div>
-      ))}
+      {notes.map((note, i) => {
+        if (note.startsWith('[web-dispatch]')) {
+          return (
+            <div key={i} className="mt-1">
+              <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-400">
+                <ListTodo className="w-2.5 h-2.5" />
+                From captures
+              </span>
+            </div>
+          );
+        }
+        return (
+          <div key={i} className="flex items-start gap-1 text-[10px] text-muted-foreground">
+            <StickyNote className="w-2.5 h-2.5 mt-0.5 shrink-0 text-amber-500/70" />
+            <span className="line-clamp-2">{note}</span>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -57,9 +67,13 @@ const SessionNotes = ({ notes }: { notes?: string[] }) => {
 export const SessionsPanel = () => {
   const [data, setData] = useState<SessionsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
   const [showDismissed, setShowDismissed] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const reconnectDelayRef = useRef(1000);
+  const esRef = useRef<EventSource | null>(null);
 
+  // Fallback fetch for after actions (SSE will pick up file changes, but we want instant UI)
   const fetchSessions = useCallback(async () => {
     try {
       const response = await fetch('/api/sessions');
@@ -74,12 +88,62 @@ export const SessionsPanel = () => {
     }
   }, []);
 
+  // SSE connection with exponential backoff reconnect
+  useEffect(() => {
+    let cancelled = false;
+
+    const connect = () => {
+      if (cancelled) return;
+
+      const es = new EventSource('/api/sessions/stream');
+      esRef.current = es;
+
+      es.onopen = () => {
+        if (cancelled) { es.close(); return; }
+        setIsLive(true);
+        reconnectDelayRef.current = 1000; // Reset backoff on successful connection
+      };
+
+      es.onmessage = (event) => {
+        if (cancelled) return;
+        try {
+          const result: SessionsData = JSON.parse(event.data);
+          setData(result);
+          setLoading(false);
+        } catch (err) {
+          console.error('Failed to parse SSE data:', err);
+        }
+      };
+
+      es.onerror = () => {
+        if (cancelled) return;
+        setIsLive(false);
+        es.close();
+        esRef.current = null;
+
+        // Exponential backoff: 1s → 2s → 4s → 8s → 16s → 30s cap
+        const delay = reconnectDelayRef.current;
+        reconnectDelayRef.current = Math.min(delay * 2, 30_000);
+        setTimeout(connect, delay);
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      esRef.current?.close();
+      esRef.current = null;
+      setIsLive(false);
+    };
+  }, []);
+
   const handleDismiss = useCallback(async (project: string) => {
     setActionLoading(project);
     try {
       const result = await dismissSession(project, 'User dismissed from UI');
       if (result.success) {
-        await fetchSessions(); // Refresh to show updated state
+        await fetchSessions();
       } else {
         alert(`Failed to dismiss: ${result.error}`);
       }
@@ -116,7 +180,7 @@ export const SessionsPanel = () => {
     try {
       const result = await markSessionDone(project, summary || 'Marked complete from UI');
       if (result.success) {
-        await fetchSessions(); // Refresh to show updated state
+        await fetchSessions();
       } else {
         alert(`Failed to mark done: ${result.error}`);
       }
@@ -140,18 +204,6 @@ export const SessionsPanel = () => {
   const handleViewStats = useCallback(() => {
     window.open('/api/sessions/stats', '_blank');
   }, []);
-
-  // Initial load and polling
-  useEffect(() => {
-    fetchSessions();
-    const interval = setInterval(fetchSessions, POLL_INTERVAL);
-    const handleVisibilityChange = () => { if (!document.hidden) fetchSessions(); };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [fetchSessions]);
 
   if (loading) {
     return (
@@ -197,6 +249,12 @@ export const SessionsPanel = () => {
             <span>
               {totalActive} active / {data.completed.length} done
             </span>
+            {isLive && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-green-500/15 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                Live
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <button

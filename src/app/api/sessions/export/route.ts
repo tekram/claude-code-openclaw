@@ -1,36 +1,6 @@
 import { readFileSync, existsSync } from 'fs';
-import path from 'path';
+import { LOG_PATH, parseLogLines } from '@/lib/sessions/parse';
 import type { Session } from '@/types/sessions';
-
-const LOG_PATH = process.env.CLAUDE_DASH_LOG_PATH || path.join(
-  process.env.HOME || process.env.USERPROFILE || '',
-  ".openclaw",
-  "workspace",
-  "sessions.log"
-);
-
-function parseTimestamp(ts: string): number {
-  const d = new Date(ts.replace(' ', 'T'));
-  return isNaN(d.getTime()) ? 0 : d.getTime();
-}
-
-function calculateDuration(startTime: string, endTime?: string): number | undefined {
-  if (!endTime) return undefined;
-  const start = parseTimestamp(startTime);
-  const end = parseTimestamp(endTime);
-  return start && end ? end - start : undefined;
-}
-
-function inferInterruptReason(details?: string): 'manual' | 'crash' | 'superseded' | 'timeout' | 'dismissed' | 'unknown' {
-  if (!details) return 'unknown';
-  const lowerDetails = details.toLowerCase();
-  if (lowerDetails.includes('superseded')) return 'superseded';
-  if (lowerDetails.includes('timeout') || lowerDetails.includes('no activity')) return 'timeout';
-  if (lowerDetails.includes('crash')) return 'crash';
-  if (lowerDetails.includes('dismissed')) return 'dismissed';
-  if (details !== 'interrupted') return 'manual';
-  return 'unknown';
-}
 
 function sessionsToCSV(sessions: Session[]): string {
   const headers = [
@@ -68,92 +38,18 @@ export async function GET(request: Request) {
     const format = searchParams.get('format') || 'json'; // json or csv
     const project = searchParams.get('project'); // optional project filter
 
-    const logPath = LOG_PATH;
-
-    if (!existsSync(logPath)) {
+    if (!existsSync(LOG_PATH)) {
       return Response.json({ sessions: [] });
     }
 
-    const logContent = readFileSync(logPath, 'utf-8').replace(/\r\n/g, '\n');
+    const logContent = readFileSync(LOG_PATH, 'utf-8').replace(/\r\n/g, '\n');
     const lines = logContent.trim().split('\n').filter((l) => l);
-
-    const allSessions: Session[] = [];
-    const openByProject: Record<string, number> = {};
-
-    // Parse log (same as main route)
-    for (const line of lines) {
-      const match = line.match(/\[([^\]]+)\]\s+(START|PAUSED|RESUMED|DONE|EXIT|DISMISSED)\s+(\S+)\s*(.*)/);
-      if (!match) continue;
-
-      const [, timestamp, action, projectName, details] = match;
-
-      if (action === 'START') {
-        if (openByProject[projectName] !== undefined) {
-          const prev = allSessions[openByProject[projectName]];
-          if (prev.status === 'active' || prev.status === 'paused') {
-            prev.status = 'exited';
-            prev.endTime = timestamp;
-            prev.details = 'superseded by new session';
-            prev.interruptReason = 'superseded';
-            prev.durationMs = calculateDuration(prev.startTime, prev.endTime);
-          }
-        }
-        const idx = allSessions.length;
-        allSessions.push({
-          project: projectName,
-          status: 'active',
-          startTime: timestamp,
-          lastActivityTime: timestamp,
-          details: details || '',
-        });
-        openByProject[projectName] = idx;
-        continue;
-      }
-
-      const openIdx = openByProject[projectName];
-      if (openIdx === undefined) continue;
-      const session = allSessions[openIdx];
-      session.lastActivityTime = timestamp;
-
-      switch (action) {
-        case 'PAUSED':
-          session.status = 'paused';
-          session.details = details || 'waiting for input';
-          break;
-        case 'RESUMED':
-          session.status = 'active';
-          if (details) session.details = details;
-          break;
-        case 'DONE':
-          session.status = 'completed';
-          session.endTime = timestamp;
-          session.details = details || '';
-          session.durationMs = calculateDuration(session.startTime, session.endTime);
-          delete openByProject[projectName];
-          break;
-        case 'EXIT':
-          session.status = 'exited';
-          session.endTime = timestamp;
-          session.details = details || 'interrupted';
-          session.interruptReason = inferInterruptReason(session.details);
-          session.durationMs = calculateDuration(session.startTime, session.endTime);
-          delete openByProject[projectName];
-          break;
-        case 'DISMISSED':
-          session.status = 'dismissed';
-          session.dismissedAt = timestamp;
-          session.details = details || session.details;
-          session.interruptReason = 'dismissed';
-          delete openByProject[projectName];
-          break;
-      }
-    }
+    const allSessions = parseLogLines(lines);
 
     // Filter by project if requested
-    let filteredSessions = allSessions;
-    if (project) {
-      filteredSessions = allSessions.filter((s) => s.project === project);
-    }
+    const filteredSessions = project
+      ? allSessions.filter((s) => s.project === project)
+      : allSessions;
 
     // Return in requested format
     if (format === 'csv') {

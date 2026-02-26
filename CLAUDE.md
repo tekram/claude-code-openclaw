@@ -24,6 +24,7 @@ npm run typecheck  # tsc --noEmit
 | Route | Methods | Purpose |
 |-------|---------|---------|
 | `/api/sessions` | GET, POST | Read sessions log; POST actions: `dismiss`, `markDone`, `addNote` |
+| `/api/sessions/stream` | GET | SSE stream — pushes `SessionsData` on every log/activity file change (200ms debounce); heartbeat every 30s |
 | `/api/sessions/stats` | GET | Aggregate counts by status/project, interrupt reasons |
 | `/api/sessions/export` | GET | Export as JSON or CSV (`?format=csv&project=optional`) |
 | `/api/todos` | GET, POST, PATCH, DELETE | Read/write `~/CAPTURES.md` checklist items |
@@ -36,7 +37,7 @@ npm run typecheck  # tsc --noEmit
 
 - **`/` (`page.tsx`)**: Two-panel layout — `<SessionsPanel>` (60%) + `<CapturesPanel>` (40%). Both are Client Components polling every 20s and 30s respectively.
 - **`/settings`**: Houses `<NotificationSettings>` — channel selector, delivery mode, per-rule toggles with delay options.
-- **`src/lib/sessions/`**: Client-side helpers (`actions.ts` for API calls, `formatting.ts` for duration/time display).
+- **`src/lib/sessions/`**: `parse.ts` — server-side shared parsing (used by all session routes + SSE stream); `actions.ts` — client-side API call helpers; `formatting.ts` — client-side duration/time display.
 - **`src/types/`**: `sessions.ts`, `todos.ts`, `notifications.ts` — all shared types.
 
 ### Data Sources
