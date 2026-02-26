@@ -2,6 +2,28 @@
 
 `session-hook.js` plugs into Claude Code's native hook events and writes a lightweight log that the dashboard reads. It handles all five hook types: `SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionEnd`.
 
+## Dispatching Coding Tasks from Captures
+
+The dashboard's Captures panel lets you turn any capture into a coding task with one click. Each capture has a **Bot icon (→)** button that opens a dispatch modal with two modes:
+
+| Mode | How it works | Result appears |
+|---|---|---|
+| **OpenClaw Agent** | Sends the task to your OpenClaw bot, which runs `claude -p` and replies back to you | In Telegram / WhatsApp |
+| **Claude Code** | Spawns `claude -p` directly on this machine as a background process | In the dashboard (click the output icon on the capture) |
+
+**OpenClaw is the recommended path** — you get the result delivered back wherever you sent the original task (Telegram group, DM, WhatsApp), the session appears in the sessions panel, and you can monitor progress from your phone.
+
+**Claude Code direct** is useful if you don't have OpenClaw set up — the task runs locally and you check the result in the dashboard.
+
+To use the OpenClaw path, you need:
+1. OpenClaw gateway running (`openclaw gateway run --port 18789 --verbose`)
+2. A `code` agent configured — see **[docs/openclaw-dispatch-claude.md](../docs/openclaw-dispatch-claude.md)**
+3. A Telegram (or WhatsApp) channel bound to that agent
+
+To use the Claude Code direct path, you only need Claude Code CLI installed and authenticated.
+
+---
+
 ## Setup
 
 ### 1. Copy the hook script

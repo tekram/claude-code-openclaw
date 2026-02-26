@@ -455,31 +455,36 @@ export const CapturesPanel = () => {
 
             {/* Mode toggle */}
             <div className="mb-3">
-              <label className="block text-xs text-muted-foreground mb-1.5">Dispatch via</label>
-              <div className="flex rounded-md overflow-hidden border border-border text-xs">
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  className={`flex-1 py-1.5 flex items-center justify-center gap-1.5 transition ${
+                  className={`flex-1 rounded-md border px-3 py-2 text-left transition ${
                     assignMode === 'openclaw'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'hover:bg-muted text-muted-foreground'
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-muted/50'
                   }`}
                   onClick={() => setAssignMode('openclaw')}
                 >
-                  <Bot className="w-3 h-3" />
-                  OpenClaw Agent
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <Bot className={`w-3 h-3 ${assignMode === 'openclaw' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className={`text-xs font-medium ${assignMode === 'openclaw' ? 'text-primary' : ''}`}>OpenClaw Agent</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Result delivered back via Telegram or WhatsApp</p>
                 </button>
                 <button
                   type="button"
-                  className={`flex-1 py-1.5 flex items-center justify-center gap-1.5 transition border-l border-border ${
+                  className={`flex-1 rounded-md border px-3 py-2 text-left transition ${
                     assignMode === 'claude'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'hover:bg-muted text-muted-foreground'
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-muted/50'
                   }`}
                   onClick={() => setAssignMode('claude')}
                 >
-                  <Terminal className="w-3 h-3" />
-                  Claude Code
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <Terminal className={`w-3 h-3 ${assignMode === 'claude' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className={`text-xs font-medium ${assignMode === 'claude' ? 'text-primary' : ''}`}>Claude Code</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Runs locally — result viewable in dashboard only</p>
                 </button>
               </div>
             </div>
