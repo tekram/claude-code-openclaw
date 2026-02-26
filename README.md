@@ -4,6 +4,8 @@ A local dashboard for Claude Code session tracking. See which sessions are activ
 
 **Not a token/cost tracker.** The focus is workflow visibility: knowing when to walk away, when to come back, and what happened while you were gone.
 
+![claude-dash screenshot](docs/screenshot.png)
+
 ## Features
 
 - **Real-time session status** — Sessions appear within ~200ms via SSE (Server-Sent Events). A pulsing Live badge confirms the connection. Active, paused (needs input), completed, and crashed sessions across all your projects.
