@@ -162,7 +162,7 @@ export const ProjectSettings = () => {
           <input
             type="text"
             className="ui-input rounded px-2.5 py-1.5 text-xs font-mono"
-            placeholder="Absolute path (e.g. C:\Users\avrfa\claude-dash)"
+            placeholder="Absolute path (e.g. C:\Users\yourname\my-project)"
             value={newPath}
             onChange={(e) => { setNewPath(e.target.value); setAddError(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}

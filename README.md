@@ -139,6 +139,41 @@ Get pushed to Telegram when Claude needs your input. Two modes — no OpenClaw r
 
 Configure at [http://localhost:3000/settings](http://localhost:3000/settings). Per-rule delays let you suppress noisy events (e.g. only notify about bash commands after 5 minutes of inactivity).
 
+## OpenClaw integration (optional)
+
+[OpenClaw](https://github.com/tekram/openclaw-ollama-telegram) is a self-hosted Telegram bot that routes messages to a local AI and from there to Claude Code. When OpenClaw is running alongside claude-dash, you get a tighter phone-to-session workflow:
+
+### Query session status from your phone
+
+Ask your Telegram bot in plain English:
+
+> "show me sessions" · "what's active" · "what's Claude working on" · "/sessions"
+
+OpenClaw reads `sessions.log` and replies with the current state of all sessions — project names, statuses, what each one is doing. Works from anywhere on your phone without opening the browser.
+
+### Capture ideas from Telegram
+
+Send your bot a message like:
+
+> "add to captures: look into caching the API responses"
+> "add to captures: switch auth to OAuth --project my-app"
+
+OpenClaw appends the item to `~/CAPTURES.md` with an optional project tag. It shows up in the Captures panel the next time the dashboard polls. The `--project` tag lets you filter and promote items per-project later.
+
+### Notifications through the gateway
+
+Instead of sending Telegram messages directly from the hook, you can route them through the OpenClaw gateway. The AI reformats the message before delivery — useful if you want it to summarize context rather than relay a raw command string. Configure at `/settings` → delivery mode → **Via OpenClaw**.
+
+When OpenClaw is running, the settings page auto-discovers your configured channels from `~/.openclaw/openclaw.json` — no tokens to copy manually.
+
+### What you need
+
+- OpenClaw installed and gateway running (`openclaw gateway run --port 18789`)
+- The hook placed at `~/.openclaw/workspace/session-hook.js` (Option B in setup above)
+- `OPENCLAW_CONFIG_PATH` pointing to your `openclaw.json` (defaults to `~/.openclaw/openclaw.json`)
+
+Everything else in the dashboard works without it.
+
 ## Captures / Todos (optional)
 
 The dashboard can manage a `~/CAPTURES.md` Markdown checklist as a lightweight idea backlog. If the file doesn't exist, the panel is hidden. This is designed for use with the [OpenClaw](https://github.com/tekram/openclaw-ollama-telegram) Telegram bot, which can append to the file from your phone — but you can also edit it directly.

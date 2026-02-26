@@ -526,7 +526,7 @@ export const CapturesPanel = () => {
                     className="ui-input w-full rounded-md px-2.5 py-1.5 text-xs font-mono"
                     value={claudeProjectPath}
                     onChange={(e) => setClaudeProjectPath(e.target.value)}
-                    placeholder="C:\Users\avrfa\my-project"
+                    placeholder="C:\Users\yourname\my-project"
                   />
                   {assignModal.item.project && !projectPaths[assignModal.item.project] && (
                     <p className="text-[10px] text-muted-foreground mt-1">
