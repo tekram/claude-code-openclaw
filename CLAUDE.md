@@ -25,9 +25,13 @@ npm run typecheck  # tsc --noEmit
 |-------|---------|---------|
 | `/api/sessions` | GET, POST | Read sessions log; POST actions: `dismiss`, `markDone`, `addNote` |
 | `/api/sessions/stream` | GET | SSE stream — pushes `SessionsData` on every log/activity file change (200ms debounce); heartbeat every 30s |
+| `/api/sessions/git-info` | GET | Branch, dirty flag, and PR/CI status for all configured project paths |
 | `/api/sessions/stats` | GET | Aggregate counts by status/project, interrupt reasons |
 | `/api/sessions/export` | GET | Export as JSON or CSV (`?format=csv&project=optional`) |
 | `/api/todos` | GET, POST, PATCH, DELETE | Read/write `~/CAPTURES.md` checklist items |
+| `/api/todos/assign` | POST | Dispatch a capture to an OpenClaw agent or Claude Code CLI |
+| `/api/tasks/result` | GET | Poll result of a CLI-dispatched task (`?id=<taskId>`) |
+| `/api/settings/projects` | GET, PUT | Read/write project name → absolute path mappings (used for git/PR info) |
 | `/api/openclaw/config` | GET | Detect OpenClaw gateway config & available channels |
 | `/api/openclaw/setup-hooks` | POST | Auto-configure hooks token in `~/.openclaw/openclaw.json` |
 | `/api/notifications/prefs` | GET, PUT | Read/write `~/.openclaw/workspace/claude-dash-notifications.json` |
@@ -36,7 +40,7 @@ npm run typecheck  # tsc --noEmit
 ### Pages & Components
 
 - **`/` (`page.tsx`)**: Two-panel layout — `<SessionsPanel>` (60%) + `<CapturesPanel>` (40%). Both are Client Components polling every 20s and 30s respectively.
-- **`/settings`**: Houses `<NotificationSettings>` — channel selector, delivery mode, per-rule toggles with delay options.
+- **`/settings`**: Houses `<NotificationSettings>` (channel selector, delivery mode, per-rule toggles with delay options) and `<ProjectSettings>` (project name → absolute path mappings for git/PR info).
 - **`src/lib/sessions/`**: `parse.ts` — server-side shared parsing (used by all session routes + SSE stream); `actions.ts` — client-side API call helpers; `formatting.ts` — client-side duration/time display.
 - **`src/types/`**: `sessions.ts`, `todos.ts`, `notifications.ts` — all shared types.
 

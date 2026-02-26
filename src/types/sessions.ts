@@ -15,6 +15,7 @@ export interface Session {
   details?: string;
 
   // Enhanced metadata
+  instanceIndex?: number;     // 1-based ordinal when multiple sessions share the same project name
   isWorking?: boolean;        // Claude is actively using tools (activity < 30s ago)
   interruptReason?: InterruptReason;
   durationMs?: number;

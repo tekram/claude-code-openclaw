@@ -76,18 +76,25 @@ export function readLatestActivity(project: string): { activity: string; isWorki
  */
 export function parseLogLines(lines: string[]): Session[] {
   const allSessions: Session[] = [];
+  // Keyed by the full projectKey from the log (e.g. "agentic-trading#abc123" or bare "agentic-trading").
+  // This allows concurrent sessions for the same project to be tracked independently when
+  // the hook embeds a session ID suffix. Old logs without a suffix work as before.
   const openByProject: Record<string, number> = {};
 
   for (const line of lines) {
     const match = line.match(/\[([^\]]+)\]\s+(START|PAUSED|RESUMED|DONE|EXIT|DISMISSED|HEARTBEAT|NOTE)\s+(\S+)\s*(.*)/);
     if (!match) continue;
 
-    const [, timestamp, action, projectName, details] = match;
+    const [, timestamp, action, projectKey, details] = match;
+    // Strip optional "#suffix" to get the display name
+    const hashIdx = projectKey.indexOf('#');
+    const projectName = hashIdx >= 0 ? projectKey.substring(0, hashIdx) : projectKey;
 
     if (action === 'START') {
-      // Close any previous open session for this project (it was orphaned)
-      if (openByProject[projectName] !== undefined) {
-        const prev = allSessions[openByProject[projectName]];
+      // Close any previous open session for the exact same key (same session restarted, or
+      // old-format unsuffixed log where we can't tell sessions apart).
+      if (openByProject[projectKey] !== undefined) {
+        const prev = allSessions[openByProject[projectKey]];
         if (prev.status === 'active' || prev.status === 'paused') {
           prev.status = 'exited';
           prev.endTime = timestamp;
@@ -104,14 +111,14 @@ export function parseLogLines(lines: string[]): Session[] {
         lastActivityTime: timestamp,
         details: details || '',
       });
-      openByProject[projectName] = idx;
+      openByProject[projectKey] = idx;
       continue;
     }
 
     // PAUSED, RESUMED, DONE, EXIT, DISMISSED, HEARTBEAT, NOTE — apply to the open session
-    let openIdx = openByProject[projectName];
+    let openIdx = openByProject[projectKey];
 
-    // For DISMISSED/DONE/NOTE: if no open session, find the most recent closed one
+    // For DISMISSED/DONE/NOTE: if no open session, find the most recent closed one by bare name
     if (openIdx === undefined && (action === 'DISMISSED' || action === 'DONE' || action === 'NOTE')) {
       for (let j = allSessions.length - 1; j >= 0; j--) {
         if (allSessions[j].project === projectName) {
@@ -143,7 +150,7 @@ export function parseLogLines(lines: string[]): Session[] {
         session.endTime = timestamp;
         session.details = details || '';
         session.durationMs = calculateDuration(session.startTime, session.endTime);
-        delete openByProject[projectName];
+        delete openByProject[projectKey];
         break;
       case 'EXIT':
         session.status = 'exited';
@@ -153,14 +160,14 @@ export function parseLogLines(lines: string[]): Session[] {
           session.details = details || 'interrupted';
         }
         session.durationMs = calculateDuration(session.startTime, session.endTime);
-        delete openByProject[projectName];
+        delete openByProject[projectKey];
         break;
       case 'DISMISSED':
         session.status = 'dismissed';
         session.dismissedAt = timestamp;
         session.details = details || session.details;
         session.interruptReason = 'dismissed';
-        delete openByProject[projectName];
+        delete openByProject[projectKey];
         break;
       case 'HEARTBEAT':
         if (details) {
@@ -263,6 +270,20 @@ export function parseSessions(): SessionsData {
 
   const active = allSessions.filter((s) => s.status === 'active');
   const paused = allSessions.filter((s) => s.status === 'paused');
+
+  // Assign a 1-based instanceIndex to sessions that share a project name with other
+  // live sessions (active or paused). Only set when there are actually duplicates —
+  // so single sessions never show any badge.
+  const liveSessions = [...active, ...paused];
+  const projectCounts: Record<string, number> = {};
+  for (const s of liveSessions) projectCounts[s.project] = (projectCounts[s.project] || 0) + 1;
+  const projectCounters: Record<string, number> = {};
+  for (const s of liveSessions) {
+    if (projectCounts[s.project] > 1) {
+      projectCounters[s.project] = (projectCounters[s.project] || 0) + 1;
+      s.instanceIndex = projectCounters[s.project];
+    }
+  }
 
   const completed = allSessions.filter((s) =>
     (s.status === 'completed' ||

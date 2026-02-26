@@ -209,6 +209,9 @@ Each capture item has a dispatch button that sends the task to an agent:
 | `/api/todos` | GET, POST, PATCH, DELETE | Read/write `~/CAPTURES.md` |
 | `/api/todos/assign` | POST | Dispatch a capture to an OpenClaw agent or Claude Code CLI |
 | `/api/tasks/result` | GET | Poll result of a CLI-dispatched task (`?id=<taskId>`) |
+| `/api/settings/projects` | GET, PUT | Read/write project name → absolute path mappings (used for git/PR info) |
+| `/api/openclaw/config` | GET | Detect OpenClaw gateway config & available channels |
+| `/api/openclaw/setup-hooks` | POST | Auto-configure hooks token in `~/.openclaw/openclaw.json` |
 | `/api/notifications/prefs` | GET, PUT | Notification preferences |
 | `/api/notifications/test` | POST | Send a test notification |
 

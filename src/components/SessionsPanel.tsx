@@ -111,10 +111,18 @@ interface KanbanCardProps {
   actions?: React.ReactNode;
 }
 
+const InstanceBadge = ({ index }: { index?: number }) =>
+  index && index > 1 ? (
+    <span className="text-[9px] font-mono text-muted-foreground/60 shrink-0">·{index}</span>
+  ) : null;
+
 const KanbanCard = ({ session, gitInfo, actions }: KanbanCardProps) => (
   <div className="bg-background border border-border rounded-md p-2.5 group">
     <div className="flex items-start justify-between gap-1">
-      <p className="text-xs font-medium truncate flex-1">{session.project}</p>
+      <div className="flex items-center gap-1 min-w-0 flex-1">
+        <p className="text-xs font-medium truncate">{session.project}</p>
+        <InstanceBadge index={session.instanceIndex} />
+      </div>
       {actions && (
         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 flex-shrink-0">
           {actions}
@@ -596,7 +604,10 @@ export const SessionsPanel = () => {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold">{session.project}</p>
+                      <div className="flex items-center gap-1">
+                        <p className="text-xs font-semibold">{session.project}</p>
+                        <InstanceBadge index={session.instanceIndex} />
+                      </div>
                       <GitBadges gitInfo={gitInfo[session.project]} />
                       {session.details && (
                         <p className="text-xs text-yellow-800 dark:text-yellow-300 mt-1 line-clamp-2">
@@ -654,6 +665,7 @@ export const SessionsPanel = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-medium">{session.project}</p>
+                      <InstanceBadge index={session.instanceIndex} />
                       {session.isWorking && (
                         <span className="inline-flex items-center gap-1 rounded-md bg-green-500/20 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400">
                           <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
