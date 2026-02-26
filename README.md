@@ -8,6 +8,8 @@ A local dashboard for Claude Code session tracking. See which sessions are activ
 
 - **Real-time session status** — Sessions appear within ~200ms via SSE (Server-Sent Events). A pulsing Live badge confirms the connection. Active, paused (needs input), completed, and crashed sessions across all your projects.
 - **Tool-level activity** — See exactly what Claude is doing: "Reading route.ts", "Running: pytest", "Editing server.py"
+- **Git branch & PR/CI badges** — Each session card shows the current branch, a dirty-state indicator, and a linked PR chip with a passing/failing/pending CI dot. Polled every 30s from your configured project paths.
+- **List and kanban views** — Toggle between a grouped list and a 4-column kanban board (Active · Needs Input · Interrupted · Done). Preference is saved across reloads.
 - **Push notifications** — Get a Telegram message when Claude needs approval or asks a question, so you can walk away and come back only when needed
 - **Session actions** — Dismiss, mark done, add notes directly from the dashboard
 - **Crash detection** — Distinguishes clean exits from unexpected crashes
@@ -117,6 +119,7 @@ Open [http://localhost:3000](http://localhost:3000). Start a Claude Code session
 | Variable | Default | Description |
 |---|---|---|
 | `CLAUDE_DASH_LOG_PATH` | `~/.openclaw/workspace/sessions.log` | Path to the sessions log written by the hook |
+| `CLAUDE_DASH_SETTINGS` | `~/.openclaw/workspace/claude-dash-settings.json` | Project path mappings (name → absolute path) used for git/PR info |
 | `CLAUDE_DASH_NOTIF_PREFS` | `~/.openclaw/workspace/claude-dash-notifications.json` | Notification preferences file |
 | `OPENCLAW_CONFIG_PATH` | `~/.openclaw/openclaw.json` | OpenClaw config (only needed for OpenClaw-based notifications) |
 
@@ -130,6 +133,12 @@ const DIR_TO_PROJECT = {
   'legacy-monorepo': 'platform',
 };
 ```
+
+## Git branch & PR/CI badges (optional)
+
+Session cards show the current git branch, a `*` if there are uncommitted changes, and a linked PR chip with a CI status dot (green/red/pulsing yellow). This requires mapping project names to their absolute paths in **Settings → Project Paths** (`http://localhost:3000/settings`).
+
+Once paths are configured, the dashboard polls `git rev-parse`, `git status`, and `gh pr view` every 30 seconds for each project. The [GitHub CLI (`gh`)](https://cli.github.com/) must be installed and authenticated for PR/CI data — branch info works without it.
 
 ## Notifications (optional)
 
@@ -194,6 +203,7 @@ Each capture item has a dispatch button that sends the task to an agent:
 |---|---|---|
 | `/api/sessions` | GET, POST | Sessions grouped by status; POST for dismiss/markDone/addNote |
 | `/api/sessions/stream` | GET | SSE stream — pushes `SessionsData` on every log/activity file change (~200ms latency) |
+| `/api/sessions/git-info` | GET | Branch, dirty flag, and PR/CI status for all configured project paths |
 | `/api/sessions/stats` | GET | Aggregated counts by status/project |
 | `/api/sessions/export` | GET | JSON or CSV export (`?format=csv&project=optional`) |
 | `/api/todos` | GET, POST, PATCH, DELETE | Read/write `~/CAPTURES.md` |
@@ -218,4 +228,5 @@ claude-dash is built around a different question: **is Claude stuck, working, or
 - **Designed for walking away.** Push notifications mean you can leave Claude running overnight or across meetings and get pinged on your phone only when it needs you. Notifications have per-rule delays so you're not spammed for every file write.
 - **Session actions.** You can dismiss stale sessions, mark work done with a note, and export history. It's not purely observational.
 - **Crash detection.** Unexpected exits (process killed, machine sleep, OOM) are flagged separately from clean exits, so you know when something went wrong vs. when Claude just finished.
+- **Git-aware.** Session cards show the current branch, dirty state, and PR/CI status — so you can see at a glance if Claude's branch is green without leaving the dashboard.
 - **No API key needed.** Everything runs locally, reads local files, and makes no outbound requests except for optional Telegram notifications you configure yourself.
