@@ -31,7 +31,9 @@ function readLatestActivity(project: string): { activity: string; isWorking: boo
     if (!data.ts || age > ACTIVITY_STALE_MS) return null;
     return {
       activity: data.activity || '',
-      isWorking: age < WORKING_THRESHOLD_MS,
+      // isRunning=true means a long-running command is in flight (set by PreToolUse hook,
+      // cleared when PostToolUse fires). Override the 30s threshold so Working badge stays up.
+      isWorking: !!data.isRunning || age < WORKING_THRESHOLD_MS,
     };
   } catch {
     return null;
