@@ -1,5 +1,5 @@
 {
-  "name": "claude-dash",
+  "name": "claude-code-openclaw",
   "version": "0.1.0",
   "description": "Local dashboard for Claude Code session tracking — remote trigger and monitor via Telegram",
   "keywords": ["claude-code", "claude", "session-tracking", "telegram", "developer-tools", "nextjs"],
