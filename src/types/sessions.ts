@@ -31,3 +31,17 @@ export interface SessionsData {
   dismissed?: Session[];
   lastUpdated: string;
 }
+
+export interface GitInfo {
+  branch: string | null;
+  isDirty: boolean;
+  pr: {
+    number: number;
+    title: string;
+    state: 'OPEN' | 'CLOSED' | 'MERGED';
+    url: string;
+    ciStatus: 'passing' | 'failing' | 'pending' | null;
+  } | null;
+}
+
+export type GitInfoMap = Record<string, GitInfo>; // keyed by project name
