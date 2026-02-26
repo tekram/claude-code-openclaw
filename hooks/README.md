@@ -134,6 +134,19 @@ If you have OpenClaw installed and its gateway running:
 
 Each rule can fire immediately or only after a configurable delay. Useful for `bash` — you may not want a ping every time Claude runs a command, only if you've been away a while.
 
+## OpenClaw Telegram Group Setup
+
+If you want Claude Code sessions dispatched from this dashboard to respond back in a
+Telegram group, see **[docs/openclaw-telegram-groups.md](../docs/openclaw-telegram-groups.md)**
+for a full gotchas guide covering:
+
+- Getting the correct group chat ID (the `-100` prefix issue)
+- Group policy config (`groupPolicy: "allowlist"` + `groups` per-group entry)
+- Bot Privacy Mode — must disable via @BotFather
+- Debugging silent message drops via gateway verbose logs
+- `NO_REPLY` behavior and SOUL.md fixes
+- Stale session / SOUL.md update issue
+
 ## Session Events
 
 | Event | Meaning |
