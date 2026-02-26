@@ -8,9 +8,12 @@ const MAX_OUTPUT_BYTES = 50 * 1024; // 50KB safeguard
 export interface TaskResult {
   status: 'running' | 'done' | 'error';
   output?: string;
+  stderr?: string;
   exitCode?: number;
   startedAt: string;
   completedAt?: string;
+  pid?: number;
+  projectName?: string;
 }
 
 export async function GET(request: Request) {

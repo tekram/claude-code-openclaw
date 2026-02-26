@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
 import { readCaptures, writeCaptures } from '@/lib/captures';
+import { LOG_PATH } from '@/lib/sessions/parse';
 
 function readJson(filePath: string): Record<string, unknown> | null {
   try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch { return null; }
@@ -99,12 +100,11 @@ async function dispatchClaude(body: {
   }
 
   const taskId = crypto.randomUUID();
+  const projectName = path.basename(projectPath.trim()); // item 4: derive project name
   const taskResultsDir = path.join(os.homedir(), '.openclaw', 'workspace', 'task-results');
   fs.mkdirSync(taskResultsDir, { recursive: true });
   const resultPath = path.join(taskResultsDir, `${taskId}.json`);
   const startedAt = new Date().toISOString();
-
-  fs.writeFileSync(resultPath, JSON.stringify({ status: 'running', startedAt }), 'utf-8');
 
   const proc = spawn('claude', ['-p', task.trim(), '--dangerously-skip-permissions'], {
     cwd: projectPath.trim(),
@@ -113,23 +113,67 @@ async function dispatchClaude(body: {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
+  // Item 1: write PID + projectName immediately so the result file is useful from the start
+  fs.writeFileSync(resultPath, JSON.stringify({
+    status: 'running',
+    startedAt,
+    pid: proc.pid,
+    projectName,
+  }), 'utf-8');
+
+  // Item 2: incremental stdout — flush current output to result file every 2 seconds
   const chunks: Buffer[] = [];
+  const flushInterval = setInterval(() => {
+    if (chunks.length === 0) return;
+    const partial = Buffer.concat(chunks).toString('utf-8');
+    try {
+      fs.writeFileSync(resultPath, JSON.stringify({
+        status: 'running',
+        output: partial || undefined,
+        startedAt,
+        pid: proc.pid,
+        projectName,
+      }), 'utf-8');
+    } catch { /* ignore mid-write errors */ }
+  }, 2000);
+
   proc.stdout!.on('data', (c: Buffer) => chunks.push(c));
-  proc.stderr!.on('data', () => { /* drain stderr */ });
+
+  // Item 3: capture stderr separately
+  const stderrChunks: Buffer[] = [];
+  proc.stderr!.on('data', (c: Buffer) => stderrChunks.push(c));
+
+  // Item 5: write a NOTE to sessions.log 2s after spawn so the session (started by the hook)
+  // gets a [web-dispatch] marker that the SessionsPanel renders as a "From captures" badge.
+  // 2s gives the SessionStart hook plenty of time to fire and write the START entry first.
+  setTimeout(() => {
+    try {
+      const timestamp = new Date().toLocaleString('sv-SE');
+      const entry = `[${timestamp}] NOTE ${projectName} [web-dispatch] taskId=${taskId}\n`;
+      fs.appendFileSync(LOG_PATH, entry, 'utf-8');
+    } catch { /* sessions.log may not exist yet; badge is optional */ }
+  }, 2000);
 
   proc.on('close', (exitCode) => {
+    clearInterval(flushInterval);
+
     const raw = Buffer.concat(chunks).toString('utf-8').trim();
     const MAX_BYTES = 50 * 1024;
     const output = Buffer.byteLength(raw, 'utf-8') > MAX_BYTES
       ? Buffer.from(raw, 'utf-8').slice(0, MAX_BYTES).toString('utf-8') + '\n\n[Output truncated at 50KB]'
       : raw;
 
+    const stderrRaw = Buffer.concat(stderrChunks).toString('utf-8').trim();
+
     fs.writeFileSync(resultPath, JSON.stringify({
       status: exitCode === 0 ? 'done' : 'error',
-      output,
+      output: output || undefined,
+      stderr: stderrRaw || undefined,
       exitCode: exitCode ?? -1,
       startedAt,
       completedAt: new Date().toISOString(),
+      pid: proc.pid,
+      projectName,
     }), 'utf-8');
 
     proc.unref();

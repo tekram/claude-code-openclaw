@@ -203,6 +203,16 @@ export const CapturesPanel = () => {
     }
   };
 
+  const fetchResult = useCallback(async (taskId: string): Promise<TaskResult | null> => {
+    const res = await fetch(`/api/tasks/result?id=${encodeURIComponent(taskId)}`);
+    if (res.status === 404) throw new Error('Result not found — the result file may have been deleted.');
+    if (!res.ok) {
+      const json = await res.json() as { error?: string };
+      throw new Error(json.error || 'Failed to load result');
+    }
+    return res.json() as Promise<TaskResult>;
+  }, []);
+
   const openResultModal = async (item: TodoItem) => {
     if (!item.taskId) return;
     setResultModal({ taskId: item.taskId, itemText: item.text });
@@ -211,17 +221,7 @@ export const CapturesPanel = () => {
     setResultLoading(true);
 
     try {
-      const res = await fetch(`/api/tasks/result?id=${encodeURIComponent(item.taskId)}`);
-      if (res.status === 404) {
-        setResultError('Result not found — the result file may have been deleted.');
-        return;
-      }
-      if (!res.ok) {
-        const json = await res.json() as { error?: string };
-        setResultError(json.error || 'Failed to load result');
-        return;
-      }
-      const result = await res.json() as TaskResult;
+      const result = await fetchResult(item.taskId);
       setTaskResult(result);
     } catch (err) {
       setResultError(err instanceof Error ? err.message : 'Network error');
@@ -229,6 +229,18 @@ export const CapturesPanel = () => {
       setResultLoading(false);
     }
   };
+
+  // Poll result every 2s while the modal is open and the task is still running
+  useEffect(() => {
+    if (!resultModal || !taskResult || taskResult.status !== 'running') return;
+    const interval = setInterval(async () => {
+      try {
+        const result = await fetchResult(resultModal.taskId);
+        setTaskResult(result);
+      } catch { /* ignore poll errors */ }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [resultModal, taskResult?.status, fetchResult]);
 
   const closeResultModal = () => {
     setResultModal(null);
@@ -632,37 +644,48 @@ export const CapturesPanel = () => {
 
               {taskResult && !resultLoading && (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className={`inline-flex items-center rounded px-2 py-0.5 font-medium text-[10px] ${
+                  <div className="flex items-center gap-2 text-xs flex-wrap">
+                    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-medium text-[10px] ${
                       taskResult.status === 'running'
                         ? 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400'
                         : taskResult.status === 'done'
                         ? 'bg-green-500/20 text-green-600 dark:text-green-400'
                         : 'bg-destructive/20 text-destructive'
                     }`}>
+                      {taskResult.status === 'running' && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
+                      )}
                       {taskResult.status === 'running' ? 'Running' : taskResult.status === 'done' ? 'Done' : `Error (exit ${taskResult.exitCode ?? '?'})`}
                     </span>
+                    {taskResult.pid && taskResult.status === 'running' && (
+                      <span className="text-[10px] text-muted-foreground font-mono">PID {taskResult.pid}</span>
+                    )}
                     {taskResult.completedAt && (
-                      <span className="text-muted-foreground">
+                      <span className="text-muted-foreground text-[10px]">
                         Completed {new Date(taskResult.completedAt).toLocaleTimeString()}
                       </span>
                     )}
                   </div>
 
-                  {taskResult.status === 'running' && (
-                    <p className="text-xs text-muted-foreground italic">
-                      Still running — check the sessions panel for progress.
-                    </p>
-                  )}
-
-                  {taskResult.output && (
+                  {taskResult.output ? (
                     <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-auto whitespace-pre-wrap break-words font-mono leading-relaxed max-h-64">
                       {taskResult.output}
                     </pre>
+                  ) : taskResult.status === 'running' ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      Waiting for output… check the Sessions panel for live activity.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">No output captured.</p>
                   )}
 
-                  {!taskResult.output && taskResult.status !== 'running' && (
-                    <p className="text-xs text-muted-foreground italic">No output captured.</p>
+                  {taskResult.stderr && (
+                    <div>
+                      <p className="text-[10px] font-medium text-destructive mb-1">stderr</p>
+                      <pre className="text-xs bg-destructive/5 border border-destructive/20 rounded-md p-3 overflow-auto whitespace-pre-wrap break-words font-mono leading-relaxed max-h-32">
+                        {taskResult.stderr}
+                      </pre>
+                    </div>
                   )}
                 </div>
               )}
