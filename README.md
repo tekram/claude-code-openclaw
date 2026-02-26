@@ -114,14 +114,44 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Start a Claude Code session in any project — it should appear within seconds.
 
+## Troubleshooting
+
+**Sessions don't appear after starting Claude Code**
+
+1. Verify the hook is wired up — check `~/.claude/settings.json` has the `hooks` block from step 3
+2. Check the log file exists after starting a Claude session:
+   ```bash
+   # Option A setup
+   cat ~/.claude-dash/sessions.log
+
+   # Option B (OpenClaw) setup
+   cat ~/.openclaw/workspace/sessions.log
+   ```
+3. If using Option A, confirm the env var is exported in your current shell:
+   ```bash
+   echo $CLAUDE_DASH_LOG_PATH
+   ```
+   If empty, add `export CLAUDE_DASH_LOG_PATH=~/.claude-dash/sessions.log` to your shell profile and restart your terminal.
+4. Restart the dashboard (`npm run dev`) after changing env vars.
+
+**"No sessions" after the dashboard loads**
+
+Sessions older than 24 hours are hidden automatically. Start a new Claude Code session — it should appear within a few seconds.
+
+**Notifications not arriving**
+
+- Direct mode: verify the bot token and chat ID in Settings. Make sure you've started a conversation with the bot first (Telegram requires this before a bot can message you).
+- Test with the **Send test notification** button in Settings → Notifications.
+
 ## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
 | `CLAUDE_DASH_LOG_PATH` | `~/.openclaw/workspace/sessions.log` | Path to the sessions log written by the hook |
-| `CLAUDE_DASH_SETTINGS` | `~/.openclaw/workspace/claude-dash-settings.json` | Project path mappings (name → absolute path) used for git/PR info |
 | `CLAUDE_DASH_NOTIF_PREFS` | `~/.openclaw/workspace/claude-dash-notifications.json` | Notification preferences file |
 | `OPENCLAW_CONFIG_PATH` | `~/.openclaw/openclaw.json` | OpenClaw config (only needed for OpenClaw-based notifications) |
+
+**Project path mappings** (for git/PR badges) are configured through the Settings UI at `http://localhost:3000/settings` — not via env vars. They're stored automatically.
 
 ## Project name mapping
 
@@ -142,14 +172,22 @@ Once paths are configured, the dashboard polls `git rev-parse`, `git status`, an
 
 ## Notifications (optional)
 
-Get pushed to Telegram when Claude needs your input. Two modes — no OpenClaw required:
+Get pushed to Telegram when Claude needs your input, finishes, or crashes — so you can walk away and come back only when needed.
 
-- **Direct mode**: uses the Telegram Bot API directly. Provide a bot token and chat ID in the settings UI.
-- **OpenClaw mode**: routes through an OpenClaw gateway if you have one running.
+Two delivery modes — **OpenClaw is not required**:
 
-Configure at [http://localhost:3000/settings](http://localhost:3000/settings). Per-rule delays let you suppress noisy events (e.g. only notify about bash commands after 5 minutes of inactivity).
+- **Direct mode** _(recommended for most users)_: sends Telegram messages directly via the Telegram Bot API. You need a bot token and chat ID:
+  1. Message [@BotFather](https://t.me/BotFather) on Telegram → `/newbot` → copy the token
+  2. Start a chat with your new bot, then get your chat ID from `https://api.telegram.org/bot<TOKEN>/getUpdates`
+  3. Enter both in **Settings → Notifications** at `http://localhost:3000/settings`
+
+- **OpenClaw mode** _(only if you already have OpenClaw running)_: routes notifications through the OpenClaw gateway. The AI can rephrase messages before delivery. Auto-discovered from your OpenClaw config — no tokens to copy.
+
+Configure per-rule delays at `http://localhost:3000/settings` to suppress noisy events (e.g. only notify about bash commands after 5 minutes of inactivity).
 
 ## OpenClaw integration (optional)
+
+> **OpenClaw is a separate, optional self-hosted project.** Everything in claude-dash works without it — notifications, session tracking, git badges, and the captures panel all function independently. Skip this section if you don't have OpenClaw set up. See the [OpenClaw repo](https://github.com/tekram/openclaw-ollama-telegram) if you want to add it later.
 
 [OpenClaw](https://github.com/tekram/openclaw-ollama-telegram) is a self-hosted Telegram bot that routes messages to a local AI and from there to Claude Code. When OpenClaw is running alongside claude-dash, you get a tighter phone-to-session workflow:
 

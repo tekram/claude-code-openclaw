@@ -31,5 +31,8 @@ yarn-error.log*
 # Claude Code local settings
 .claude/
 
+# Internal development plans (not user-facing docs)
+docs/completed-plans/
+
 # Vercel
 .vercel

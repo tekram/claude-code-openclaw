@@ -1,7 +1,14 @@
 {
-  "name": "claude-code-openclaw",
+  "name": "claude-dash",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local dashboard for Claude Code session tracking — remote trigger and monitor via Telegram",
+  "keywords": ["claude-code", "claude", "session-tracking", "telegram", "developer-tools", "nextjs"],
+  "author": "tekram",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tekram/claude-dash.git"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
