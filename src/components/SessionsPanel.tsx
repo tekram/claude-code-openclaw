@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { Session, SessionsData, GitInfo, GitInfoMap } from '@/types/sessions';
 import { dismissSession, markSessionDone, exportSessions, resumeSession } from '@/lib/sessions/actions';
+import { AnalyticsModal } from '@/components/AnalyticsModal';
 import {
   formatDuration,
   formatRelativeTime,
@@ -174,6 +175,7 @@ export const SessionsPanel = () => {
   const [showDismissed, setShowDismissed] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [gitInfo, setGitInfo] = useState<GitInfoMap>({});
   const reconnectDelayRef = useRef(1000);
   const esRef = useRef<EventSource | null>(null);
@@ -335,7 +337,7 @@ export const SessionsPanel = () => {
   }, []);
 
   const handleViewStats = useCallback(() => {
-    window.open('/api/sessions/stats', '_blank');
+    setShowAnalytics(true);
   }, []);
 
   // ── Loading / empty states ──────────────────────────────────────────────
@@ -585,6 +587,7 @@ export const SessionsPanel = () => {
 
   return (
     <div className="h-full flex flex-col">
+      {showAnalytics && <AnalyticsModal onClose={() => setShowAnalytics(false)} />}
       {header}
 
       <div className="flex-1 overflow-auto px-4 py-4 space-y-3">
