@@ -15,6 +15,7 @@ export interface Session {
   details?: string;
 
   // Enhanced metadata
+  sessionSuffix?: string;     // First 6 alphanumeric chars of Claude's session_id (from log #suffix)
   instanceIndex?: number;     // 1-based ordinal when multiple sessions share the same project name
   isWorking?: boolean;        // Claude is actively using tools (activity < 30s ago)
   interruptReason?: InterruptReason;

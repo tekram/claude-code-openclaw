@@ -110,6 +110,7 @@ export function parseLogLines(lines: string[]): Session[] {
         startTime: timestamp,
         lastActivityTime: timestamp,
         details: details || '',
+        sessionSuffix: hashIdx >= 0 ? projectKey.substring(hashIdx + 1) : undefined,
       });
       openByProject[projectKey] = idx;
       continue;
@@ -204,6 +205,30 @@ export function parseSessions(): SessionsData {
 
   const now = Date.now();
 
+  // Owner-file deduplication: if an active/paused session's session suffix doesn't match
+  // the current owner file, a newer session has claimed the project and this one is stale.
+  // This catches crashes/kills where SessionEnd never fired (no EXIT in the log).
+  for (const session of allSessions) {
+    if ((session.status === 'active' || session.status === 'paused') && session.sessionSuffix) {
+      try {
+        const ownerPath = path.join(SESSION_OWNER_DIR, `${session.project}.json`);
+        if (existsSync(ownerPath)) {
+          const owner = JSON.parse(readFileSync(ownerPath, 'utf-8'));
+          if (owner.sessionId) {
+            const ownerSuffix = (owner.sessionId as string).replace(/[^a-zA-Z0-9]/g, '').substring(0, 6);
+            if (ownerSuffix !== session.sessionSuffix) {
+              session.status = 'exited';
+              session.endTime = session.lastActivityTime || session.startTime;
+              session.interruptReason = 'superseded';
+              session.durationMs = calculateDuration(session.startTime, session.endTime);
+              session.details = 'superseded by new session';
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
   // Grace period: if a session was PAUSED very recently with a "Permission needed:" reason,
   // treat it as still active. Auto-approved tools fire PreToolUse→PostToolUse in <1s,
   // but real permission prompts take 10+ seconds.
@@ -257,14 +282,25 @@ export function parseSessions(): SessionsData {
   // 24-hour cutoff for old sessions
   const cutoff = now - HIDE_OLD_THRESHOLD_MS;
 
-  // Overlay latest tool activity for active sessions
+  // Overlay latest tool activity for active sessions.
+  // When multiple active sessions share a project, only apply the activity to the
+  // most recently active one — the .activity file is project-wide, not per-session.
+  const mostRecentActiveByProject: Record<string, Session> = {};
   for (const session of allSessions) {
     if (session.status === 'active') {
-      const activity = readLatestActivity(session.project);
-      if (activity) {
-        session.details = activity.activity;
-        session.isWorking = activity.isWorking;
+      const prev = mostRecentActiveByProject[session.project];
+      const sessionTs = parseTimestamp(session.lastActivityTime || session.startTime);
+      const prevTs = prev ? parseTimestamp(prev.lastActivityTime || prev.startTime) : 0;
+      if (!prev || sessionTs > prevTs) {
+        mostRecentActiveByProject[session.project] = session;
       }
+    }
+  }
+  for (const session of Object.values(mostRecentActiveByProject)) {
+    const activity = readLatestActivity(session.project);
+    if (activity) {
+      session.details = activity.activity;
+      session.isWorking = activity.isWorking;
     }
   }
 
