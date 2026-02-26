@@ -6,17 +6,18 @@ A local dashboard for Claude Code session tracking. See which sessions are activ
 
 ## Features
 
-- **Live session status** — Active, paused (needs your input), completed, and crashed sessions across all your projects
+- **Real-time session status** — Sessions appear within ~200ms via SSE (Server-Sent Events). A pulsing Live badge confirms the connection. Active, paused (needs input), completed, and crashed sessions across all your projects.
 - **Tool-level activity** — See exactly what Claude is doing: "Reading route.ts", "Running: pytest", "Editing server.py"
 - **Push notifications** — Get a Telegram message when Claude needs approval or asks a question, so you can walk away and come back only when needed
 - **Session actions** — Dismiss, mark done, add notes directly from the dashboard
 - **Crash detection** — Distinguishes clean exits from unexpected crashes
 - **Captures/Todos** — Optional: manage a `~/CAPTURES.md` idea backlog alongside your sessions
+- **Dispatch tasks from the dashboard** — Send a capture item directly to Claude Code CLI. Tracked with live output streaming, PID, stderr capture, and a "From captures" badge in the sessions panel.
 - **Export** — Download session history as JSON or CSV
 
 ## How it works
 
-A small hook script (`session-hook.js`) plugs into Claude Code's native hook events — `SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionEnd`. It writes a lightweight append log and a few small state files. The dashboard reads those files and polls every 20 seconds.
+A small hook script (`session-hook.js`) plugs into Claude Code's native hook events — `SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionEnd`. It writes a lightweight append log and a few small state files. The dashboard streams updates in real time via SSE: it watches the log file and activity files with `fs.watch`, pushing new data to the browser within ~200ms of any change.
 
 No background daemon. No dependency on Claude's internal log format. No API calls.
 
@@ -178,14 +179,26 @@ Everything else in the dashboard works without it.
 
 The dashboard can manage a `~/CAPTURES.md` Markdown checklist as a lightweight idea backlog. If the file doesn't exist, the panel is hidden. This is designed for use with the [OpenClaw](https://github.com/tekram/openclaw-ollama-telegram) Telegram bot, which can append to the file from your phone — but you can also edit it directly.
 
+Each capture item has a dispatch button that sends the task to an agent:
+
+- **OpenClaw agent** — posts to your local gateway; result delivered back via Telegram
+- **Claude Code CLI** — spawns `claude -p` locally and tracks the run in the dashboard:
+  - PID visible while running (useful for debugging or killing a runaway task)
+  - Output streams live to the result modal every 2 seconds — no waiting until completion
+  - stderr captured separately and shown in a distinct block on failure
+  - The corresponding session in the sessions panel gets a **"From captures"** badge so you can trace it back to the originating item
+
 ## API
 
 | Endpoint | Methods | Description |
 |---|---|---|
 | `/api/sessions` | GET, POST | Sessions grouped by status; POST for dismiss/markDone/addNote |
+| `/api/sessions/stream` | GET | SSE stream — pushes `SessionsData` on every log/activity file change (~200ms latency) |
 | `/api/sessions/stats` | GET | Aggregated counts by status/project |
 | `/api/sessions/export` | GET | JSON or CSV export (`?format=csv&project=optional`) |
 | `/api/todos` | GET, POST, PATCH, DELETE | Read/write `~/CAPTURES.md` |
+| `/api/todos/assign` | POST | Dispatch a capture to an OpenClaw agent or Claude Code CLI |
+| `/api/tasks/result` | GET | Poll result of a CLI-dispatched task (`?id=<taskId>`) |
 | `/api/notifications/prefs` | GET, PUT | Notification preferences |
 | `/api/notifications/test` | POST | Send a test notification |
 
@@ -199,7 +212,8 @@ Most Claude Code monitoring tools focus on **token and cost tracking** — how m
 
 claude-dash is built around a different question: **is Claude stuck, working, or done?**
 
-- **Hook-based, not log-parsing.** It uses Claude Code's native hook events rather than scraping internal log files. This means status transitions are precise and immediate — no polling the process, no parsing undocumented formats.
+- **Hook-based, not log-parsing.** It uses Claude Code's native hook events rather than scraping internal log files. Status transitions are precise — no polling the process, no parsing undocumented formats.
+- **Real-time, not polling.** The dashboard uses Server-Sent Events with `fs.watch` on the log file. New sessions appear within ~200ms. A Live badge confirms the stream is connected, with automatic reconnect if it drops.
 - **Tool-level activity, not just status.** When a session is active, the dashboard shows what tool Claude is currently using and on which file — "Editing server.py", "Running: pytest", "Searching for TODO". Not just a green dot.
 - **Designed for walking away.** Push notifications mean you can leave Claude running overnight or across meetings and get pinged on your phone only when it needs you. Notifications have per-rule delays so you're not spammed for every file write.
 - **Session actions.** You can dismiss stale sessions, mark work done with a note, and export history. It's not purely observational.
