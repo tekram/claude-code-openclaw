@@ -134,18 +134,28 @@ If you have OpenClaw installed and its gateway running:
 
 Each rule can fire immediately or only after a configurable delay. Useful for `bash` — you may not want a ping every time Claude runs a command, only if you've been away a while.
 
-## OpenClaw Telegram Group Setup
+## OpenClaw Integration
 
-If you want Claude Code sessions dispatched from this dashboard to respond back in a
-Telegram group, see **[docs/openclaw-telegram-groups.md](../docs/openclaw-telegram-groups.md)**
-for a full gotchas guide covering:
+### Dispatching Claude Code from an OpenClaw Agent
+
+To configure an OpenClaw agent (SOUL.md, TOOLS.md, model config) that routes messages
+to Claude Code CLI, see **[docs/openclaw-dispatch-claude.md](../docs/openclaw-dispatch-claude.md)**:
+
+- Agent directory structure and SOUL.md / TOOLS.md setup
+- Model config (`gpt-oss:120b-cloud` — cloud-routed, no cold-start delay)
+- Claude Code CLI requirements (PATH, auth, `--dangerously-skip-permissions`)
+- Webhook dispatch format from claude-dash web UI
+- `NO_REPLY` behavior fix and stale session clearing
+
+### Telegram Group Setup
+
+If you want messages in a Telegram group routed through OpenClaw to Claude Code,
+see **[docs/openclaw-telegram-groups.md](../docs/openclaw-telegram-groups.md)**:
 
 - Getting the correct group chat ID (the `-100` prefix issue)
 - Group policy config (`groupPolicy: "allowlist"` + `groups` per-group entry)
 - Bot Privacy Mode — must disable via @BotFather
 - Debugging silent message drops via gateway verbose logs
-- `NO_REPLY` behavior and SOUL.md fixes
-- Stale session / SOUL.md update issue
 
 ## Session Events
 
