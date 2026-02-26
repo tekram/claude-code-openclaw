@@ -129,6 +129,45 @@ export function parseLogLines(lines: string[]): Session[] {
       }
     }
 
+    // For RESUMED after a DISMISSED (or other close): the session may have been removed from
+    // openByProject but the process is still running. Re-attach to the most recent session.
+    if (openIdx === undefined && action === 'RESUMED') {
+      for (let j = allSessions.length - 1; j >= 0; j--) {
+        if (allSessions[j].project === projectName) {
+          openIdx = j;
+          openByProject[projectKey] = j;
+          if (projectKey !== projectName) openByProject[projectName] = j;
+          break;
+        }
+      }
+    }
+
+    // For live events (PAUSED/RESUMED/HEARTBEAT/EXIT) with a suffix: if no suffixed session
+    // exists, fall back to an open unsuffixed session for the same project. This handles the
+    // case where a session started before the hook began embedding session-ID suffixes, or
+    // where the SessionStart hook failed to fire.
+    if (openIdx === undefined && hashIdx >= 0) {
+      // First try the still-open unsuffixed session.
+      let fallbackIdx = openByProject[projectName];
+      // If not open, find the most recent session by bare name (handles post-dismiss continue).
+      if (fallbackIdx === undefined) {
+        for (let j = allSessions.length - 1; j >= 0; j--) {
+          if (allSessions[j].project === projectName) {
+            fallbackIdx = j;
+            break;
+          }
+        }
+      }
+      if (fallbackIdx !== undefined) {
+        openIdx = fallbackIdx;
+        openByProject[projectKey] = fallbackIdx;
+        openByProject[projectName] = fallbackIdx;
+        if (!allSessions[fallbackIdx].sessionSuffix) {
+          allSessions[fallbackIdx].sessionSuffix = projectKey.substring(hashIdx + 1);
+        }
+      }
+    }
+
     if (openIdx === undefined) continue;
     const session = allSessions[openIdx];
     session.lastActivityTime = timestamp;
