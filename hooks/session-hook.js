@@ -19,15 +19,11 @@ const SESSION_OWNER_DIR = path.join(__dirname, '.session-owners');
 const OPENCLAW_CONFIG_PATH = path.join(__dirname, '..', 'openclaw.json');
 const NOTIF_PREFS_PATH = path.join(__dirname, 'claude-dash-notifications.json');
 
+// Optional: map directory basenames to display names.
+// Unknown directories automatically fall back to the basename, so this is only
+// needed if you want a different display name (e.g. 'legacy-monorepo' → 'platform').
 const DIR_TO_PROJECT = {
-  'agentic-trading': 'agentic-trading',
-  'backtesting-engine': 'backtesting-engine',
-  'flair': 'flair',
-  'openscheduling': 'openscheduling',
-  'openclaw-studio': 'openclaw-studio',
-  'huberman-protocol-pal': 'huberman-protocol-pal',
-  'openclaw-ollama-telegram': 'openclaw',
-  'claude-dash': 'claude-dash',
+  // 'my-project': 'My Project',
 };
 
 function getProjectFromCwd(cwd) {
