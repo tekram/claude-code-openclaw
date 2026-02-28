@@ -684,10 +684,10 @@ export const SessionsPanel = () => {
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <div className="flex items-center gap-1 flex-shrink-0">
                         <button
                           type="button"
-                          className="ui-btn-icon h-6 w-6 !bg-transparent hover:!bg-muted/50 text-muted-foreground"
+                          className="ui-btn-icon h-6 w-6 !bg-transparent hover:!bg-muted/50 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={() => { setNoteOpenFor(isNoteOpen ? null : sessionKey); setNoteText(''); }}
                           title="Add note"
                         >

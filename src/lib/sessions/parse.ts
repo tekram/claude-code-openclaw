@@ -16,6 +16,7 @@ export const SESSION_OWNER_DIR = path.join(
 
 const STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours — active sessions
 const PAUSED_STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 min — paused sessions (hook missed exit)
+const OWNER_FILE_PAUSED_STALE_MS = 10 * 60 * 1000; // 10 min — owner file stuck in paused = dead session
 const HIDE_OLD_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PERMISSION_PAUSE_GRACE_MS = 10_000; // 10s grace for auto-approved tool permissions
 const ACTIVITY_STALE_MS = 5 * 60 * 1000; // 5 min — ignore activity files older than this
@@ -222,7 +223,11 @@ export function parseLogLines(lines: string[]): Session[] {
         session.dismissedAt = timestamp;
         session.details = details || session.details;
         session.interruptReason = 'dismissed';
-        delete openByProject[projectKey];
+        // Clear ALL openByProject entries for this session (bare + any suffixed variants),
+        // so a still-running process's subsequent PAUSED events can't re-open it.
+        for (const k of Object.keys(openByProject)) {
+          if (openByProject[k] === openIdx) delete openByProject[k];
+        }
         break;
       case 'HEARTBEAT':
         if (details) {
@@ -297,6 +302,8 @@ export function parseSessions(): SessionsData {
 
   // Owner-file override: if the log says "paused" but the hook's owner file says "active",
   // the PostToolUse ran and updated the owner file but failed to log RESUMED (race/crash).
+  // Also detect sessions where the owner file itself is stuck in "paused" for too long —
+  // this means the process was force-killed while paused and SessionEnd never fired.
   for (const session of allSessions) {
     if (session.status === 'paused') {
       try {
@@ -305,10 +312,19 @@ export function parseSessions(): SessionsData {
           const owner = JSON.parse(readFileSync(ownerPath, 'utf-8'));
           const pausedAt = parseTimestamp(session.lastActivityTime || session.startTime);
           if (owner.status === 'active' && owner.ts > pausedAt) {
+            // Owner file updated to active after the pause — hook missed RESUMED log
             session.status = 'active';
             if (session.details?.startsWith('Permission needed:') || session.details === 'waiting for input') {
               session.details = '';
             }
+          } else if (owner.status === 'paused' && owner.ts && (now - owner.ts) > OWNER_FILE_PAUSED_STALE_MS) {
+            // Owner file has been stuck in paused for 10+ min — process was likely killed
+            session.status = 'exited';
+            session.endTime = session.lastActivityTime || session.startTime;
+            session.interruptReason = 'timeout';
+            session.durationMs = calculateDuration(session.startTime, session.endTime);
+            const prevDetails = session.details ? `${session.details} - ` : '';
+            session.details = `${prevDetails}No response (process likely killed)`;
           }
         }
       } catch { /* ignore */ }
