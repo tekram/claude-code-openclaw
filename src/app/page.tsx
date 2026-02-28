@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { SessionsPanel } from '@/components/SessionsPanel';
 import { CapturesPanel } from '@/components/CapturesPanel';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function Home() {
   return (
@@ -14,9 +15,13 @@ export default function Home() {
               <Link href="/insights" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                 Insights
               </Link>
+              <Link href="/history" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                History
+              </Link>
               <Link href="/settings" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                 Settings
               </Link>
+              <ThemeToggle />
             </div>
           </div>
           <div className="flex-1 overflow-hidden">
