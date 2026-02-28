@@ -23,6 +23,8 @@ export interface Session {
   completionNotes?: string;
   dismissedAt?: string;
   notes?: string[];           // User-added notes via UI or CLI
+  startCommitHash?: string;   // git HEAD at session start (40-char SHA)
+  endCommitHash?: string;     // git HEAD at session end (40-char SHA)
 }
 
 export interface SessionsData {

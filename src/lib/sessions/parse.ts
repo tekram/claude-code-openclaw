@@ -21,6 +21,13 @@ const PERMISSION_PAUSE_GRACE_MS = 10_000; // 10s grace for auto-approved tool pe
 const ACTIVITY_STALE_MS = 5 * 60 * 1000; // 5 min — ignore activity files older than this
 const WORKING_THRESHOLD_MS = 30_000; // 30s — Claude is "working" if tool activity within this window
 
+/** Strip trailing @h=<sha> marker from a log details string, returning both parts. */
+function extractHash(details: string): { cleaned: string; hash: string | null } {
+  const match = details.match(/\s*@h=([a-f0-9]{40})\s*$/);
+  if (!match) return { cleaned: details, hash: null };
+  return { cleaned: details.substring(0, details.length - match[0].length).trim(), hash: match[1] };
+}
+
 export function parseTimestamp(ts: string): number {
   // Timestamps like "2026-02-22 16:47:01" — parse as local time
   const d = new Date(ts.replace(' ', 'T'));
@@ -103,14 +110,16 @@ export function parseLogLines(lines: string[]): Session[] {
           prev.durationMs = calculateDuration(prev.startTime, prev.endTime);
         }
       }
+      const { cleaned: cleanedDetails, hash: startHash } = extractHash(details || '');
       const idx = allSessions.length;
       allSessions.push({
         project: projectName,
         status: 'active',
         startTime: timestamp,
         lastActivityTime: timestamp,
-        details: details || '',
+        details: cleanedDetails,
         sessionSuffix: hashIdx >= 0 ? projectKey.substring(hashIdx + 1) : undefined,
+        startCommitHash: startHash ?? undefined,
       });
       openByProject[projectKey] = idx;
       continue;
@@ -185,23 +194,29 @@ export function parseLogLines(lines: string[]): Session[] {
           session.details = '';
         }
         break;
-      case 'DONE':
+      case 'DONE': {
+        const { cleaned: doneDetails, hash: doneHash } = extractHash(details || '');
         session.status = 'completed';
         session.endTime = timestamp;
-        session.details = details || '';
+        session.details = doneDetails;
         session.durationMs = calculateDuration(session.startTime, session.endTime);
+        if (doneHash) session.endCommitHash = doneHash;
         delete openByProject[projectKey];
         break;
-      case 'EXIT':
+      }
+      case 'EXIT': {
+        const { cleaned: exitDetails, hash: exitHash } = extractHash(details || 'interrupted');
         session.status = 'exited';
         session.endTime = timestamp;
-        session.interruptReason = inferInterruptReason(details || 'interrupted');
+        session.interruptReason = inferInterruptReason(exitDetails || 'interrupted');
         if (!session.details || session.details.startsWith('Permission needed:') || session.details === 'waiting for input') {
-          session.details = details || 'interrupted';
+          session.details = exitDetails || 'interrupted';
         }
         session.durationMs = calculateDuration(session.startTime, session.endTime);
+        if (exitHash) session.endCommitHash = exitHash;
         delete openByProject[projectKey];
         break;
+      }
       case 'DISMISSED':
         session.status = 'dismissed';
         session.dismissedAt = timestamp;

@@ -97,8 +97,10 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const project = searchParams.get('project') || '';
-    const from = searchParams.get('from') || ''; // session startTime  "YYYY-MM-DD HH:MM:SS"
-    const to = searchParams.get('to') || '';     // session endTime    "YYYY-MM-DD HH:MM:SS" (omit if session still running)
+    const from = searchParams.get('from') || '';         // fallback: session startTime "YYYY-MM-DD HH:MM:SS"
+    const to = searchParams.get('to') || '';             // fallback: session endTime
+    const startHash = searchParams.get('startHash') || ''; // precise: git HEAD at session start
+    const endHash = searchParams.get('endHash') || '';     // precise: git HEAD at session end
 
     const empty: SessionCommitsResponse = { commits: [], githubBaseUrl: null, repoSlug: null };
 
@@ -111,8 +113,18 @@ export async function GET(req: Request) {
     // Build git log command
     // Format: HASH\x1fSUBJECT\x1fISO-DATE  (unit separator as field delimiter, safe inside messages)
     const parts = ['git log', '--format=%H\x1f%s\x1f%aI', '--no-merges'];
-    if (from) parts.push(`--after="${from}"`);
-    if (to) parts.push(`--before="${to}"`);
+
+    if (startHash) {
+      // Hash-based range: precise, branch-agnostic, no overlap between sessions.
+      // startHash..endHash = commits reachable from endHash but not from startHash.
+      // If endHash is absent (session still running), compare against HEAD.
+      const rangeEnd = endHash || 'HEAD';
+      parts.push(`${startHash}..${rangeEnd}`);
+    } else {
+      // Time-based fallback for sessions logged before this change.
+      if (from) parts.push(`--after="${from}"`);
+      if (to) parts.push(`--before="${to}"`);
+    }
 
     const { stdout: logOut } = await execAsync(parts.join(' '), {
       cwd: projectPath,

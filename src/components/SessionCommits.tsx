@@ -6,8 +6,10 @@ import type { SessionCommitsResponse, SessionCommit } from '@/app/api/sessions/c
 
 interface Props {
   project: string;
-  startTime: string;  // "YYYY-MM-DD HH:MM:SS"
-  endTime?: string;   // "YYYY-MM-DD HH:MM:SS" — omit for running sessions
+  startTime: string;    // "YYYY-MM-DD HH:MM:SS" — fallback for old sessions
+  endTime?: string;     // "YYYY-MM-DD HH:MM:SS" — fallback for old sessions
+  startHash?: string;   // git HEAD at session start (preferred)
+  endHash?: string;     // git HEAD at session end (preferred)
 }
 
 type LoadState = 'idle' | 'loading' | 'done' | 'empty' | 'error';
@@ -60,7 +62,7 @@ function CommitRow({ commit }: { commit: SessionCommit }) {
   );
 }
 
-export function SessionCommits({ project, startTime, endTime }: Props) {
+export function SessionCommits({ project, startTime, endTime, startHash, endHash }: Props) {
   const [state, setState] = useState<LoadState>('idle');
   const [data, setData] = useState<SessionCommitsResponse | null>(null);
   const [open, setOpen] = useState(false);
@@ -71,6 +73,8 @@ export function SessionCommits({ project, startTime, endTime }: Props) {
 
     const params = new URLSearchParams({ project, from: startTime });
     if (endTime) params.set('to', endTime);
+    if (startHash) params.set('startHash', startHash);
+    if (endHash) params.set('endHash', endHash);
 
     try {
       const res = await fetch(`/api/sessions/commits?${params}`);

@@ -140,7 +140,7 @@ function SessionRow({ session }: { session: Session }) {
               )}
             </div>
             {(session.status === 'completed' || session.status === 'exited') && (
-              <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} />
+              <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} startHash={session.startCommitHash} endHash={session.endCommitHash} />
             )}
           </td>
         </tr>
