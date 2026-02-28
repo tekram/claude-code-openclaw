@@ -10,6 +10,7 @@ import type { Session, SessionsData, GitInfo, GitInfoMap } from '@/types/session
 import { dismissSession, markSessionDone, exportSessions, resumeSession, addSessionNote } from '@/lib/sessions/actions';
 import { AnalyticsModal } from '@/components/AnalyticsModal';
 import { BriefingBanner } from '@/components/BriefingBanner';
+import { SessionCommits } from '@/components/SessionCommits';
 import {
   formatDuration,
   formatRelativeTime,
@@ -853,6 +854,7 @@ export const SessionsPanel = () => {
                           <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{session.details}</p>
                         )}
                         <SessionNotes notes={session.notes} />
+                        <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} />
                       </div>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
@@ -951,6 +953,7 @@ export const SessionsPanel = () => {
                       <p className="text-[10px] text-muted-foreground mt-1">{session.details}</p>
                     )}
                     <SessionNotes notes={session.notes} />
+                    <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} />
                   </div>
                 );
               })}

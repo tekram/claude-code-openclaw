@@ -9,6 +9,7 @@ import {
 import { formatDuration, getReasonLabel } from '@/lib/sessions/formatting';
 import type { Session } from '@/types/sessions';
 import type { HistoryResponse } from '@/app/api/sessions/history/route';
+import { SessionCommits } from '@/components/SessionCommits';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PER_PAGE = 50;
@@ -75,7 +76,9 @@ function StatusLabel({ status, reason }: { status: Session['status']; reason?: S
 // ─── Session row ──────────────────────────────────────────────────────────────
 function SessionRow({ session }: { session: Session }) {
   const [expanded, setExpanded] = useState(false);
-  const hasDetails = !!(session.details || (session.notes && session.notes.length > 0));
+  const hasDetails = !!(session.details || (session.notes && session.notes.length > 0))
+    || session.status === 'completed'
+    || session.status === 'exited';
 
   return (
     <>
@@ -136,6 +139,9 @@ function SessionRow({ session }: { session: Session }) {
                 <span>Ended: {new Date(session.endTime).toLocaleString()}</span>
               )}
             </div>
+            {(session.status === 'completed' || session.status === 'exited') && (
+              <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} />
+            )}
           </td>
         </tr>
       )}
