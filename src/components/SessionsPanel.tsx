@@ -313,11 +313,9 @@ export const SessionsPanel = () => {
   }, [fetchSessions]);
 
   const handleMarkDone = useCallback(async (project: string) => {
-    const summary = prompt(`Mark "${project}" as done.\n\nOptional summary:`);
-    if (summary === null) return;
     setActionLoading(project);
     try {
-      const result = await markSessionDone(project, summary || 'Marked complete from UI');
+      const result = await markSessionDone(project, 'Marked complete from UI');
       if (result.success) {
         await fetchSessions();
       } else {
@@ -856,7 +854,7 @@ export const SessionsPanel = () => {
                         <SessionNotes notes={session.notes} />
                         <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} startHash={session.startCommitHash} endHash={session.endCommitHash} />
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
                           className="ui-btn-icon h-6 w-6 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
