@@ -4,10 +4,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Activity, Clock, AlertCircle, CheckCircle, XCircle, RefreshCw,
   X, Check, Download, BarChart3, StickyNote, Play, ListTodo,
-  GitBranch, GitPullRequest, List, LayoutGrid,
+  GitBranch, GitPullRequest, List, LayoutGrid, MessageSquarePlus,
 } from 'lucide-react';
 import type { Session, SessionsData, GitInfo, GitInfoMap } from '@/types/sessions';
-import { dismissSession, markSessionDone, exportSessions, resumeSession } from '@/lib/sessions/actions';
+import { dismissSession, markSessionDone, exportSessions, resumeSession, addSessionNote } from '@/lib/sessions/actions';
 import { AnalyticsModal } from '@/components/AnalyticsModal';
 import { BriefingBanner } from '@/components/BriefingBanner';
 import {
@@ -178,6 +178,8 @@ export const SessionsPanel = () => {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [gitInfo, setGitInfo] = useState<GitInfoMap>({});
+  const [noteOpenFor, setNoteOpenFor] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
   const reconnectDelayRef = useRef(1000);
   const esRef = useRef<EventSource | null>(null);
 
@@ -327,6 +329,26 @@ export const SessionsPanel = () => {
       setActionLoading(null);
     }
   }, [fetchSessions]);
+
+  const handleAddNote = useCallback(async (sessionKey: string, project: string) => {
+    const text = noteText.trim();
+    if (!text) { setNoteOpenFor(null); return; }
+    setActionLoading(project);
+    try {
+      const result = await addSessionNote(project, text);
+      if (result.success) {
+        setNoteOpenFor(null);
+        setNoteText('');
+        await fetchSessions();
+      } else {
+        alert(`Failed to add note: ${result.error}`);
+      }
+    } catch {
+      alert('Failed to add note');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [noteText, fetchSessions]);
 
   const handleExport = useCallback(async (format: 'json' | 'csv') => {
     try {
@@ -603,51 +625,96 @@ export const SessionsPanel = () => {
               <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">Needs Your Input</p>
             </div>
             <div className="space-y-2">
-              {data.paused.map((session, i) => (
-                <div
-                  key={`${session.project}-paused-${i}`}
-                  className="bg-yellow-500/15 border border-yellow-500/30 rounded-md p-3 group"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1">
-                        <p className="text-xs font-semibold">{session.project}</p>
-                        <InstanceBadge index={session.instanceIndex} />
-                      </div>
-                      <GitBadges gitInfo={gitInfo[session.project]} />
-                      {session.details && (
-                        <p className="text-xs text-yellow-800 dark:text-yellow-300 mt-1 line-clamp-2">
-                          {session.details}
+              {data.paused.map((session, i) => {
+                const sessionKey = `${session.project}-paused-${i}`;
+                const isNoteOpen = noteOpenFor === sessionKey;
+                return (
+                  <div
+                    key={sessionKey}
+                    className="bg-yellow-500/15 border border-yellow-500/30 rounded-md p-3 group"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1">
+                          <p className="text-xs font-semibold">{session.project}</p>
+                          <InstanceBadge index={session.instanceIndex} />
+                        </div>
+                        <GitBadges gitInfo={gitInfo[session.project]} />
+                        {session.details && (
+                          <p className="text-xs text-yellow-800 dark:text-yellow-300 mt-1 line-clamp-2">
+                            {session.details}
+                          </p>
+                        )}
+                        <SessionNotes notes={session.notes} />
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Paused {formatRelativeTime(session.lastActivityTime || session.startTime)} · started {formatTime(session.startTime)}
                         </p>
-                      )}
-                      <SessionNotes notes={session.notes} />
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        Paused {formatRelativeTime(session.lastActivityTime || session.startTime)} · started {formatTime(session.startTime)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <button
-                        type="button"
-                        className="ui-btn-icon h-6 w-6 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
-                        onClick={() => handleResume(session.project)}
-                        disabled={actionLoading === session.project}
-                        title="Mark as active"
-                      >
-                        <Play className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        className="ui-btn-icon h-6 w-6 !bg-gray-500/20 hover:!bg-gray-500/30 text-gray-700 dark:text-gray-400"
-                        onClick={() => handleDismiss(session.project)}
-                        disabled={actionLoading === session.project}
-                        title="Dismiss"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+                        {isNoteOpen && (
+                          <div className="flex items-center gap-1.5 mt-2">
+                            <input
+                              type="text"
+                              value={noteText}
+                              onChange={(e) => setNoteText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleAddNote(sessionKey, session.project);
+                                if (e.key === 'Escape') { setNoteOpenFor(null); setNoteText(''); }
+                              }}
+                              placeholder="Add a note… (Enter to save)"
+                              className="flex-1 text-xs bg-background/60 border border-border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-ring"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              className="ui-btn-icon h-5 w-5 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
+                              onClick={() => handleAddNote(sessionKey, session.project)}
+                              disabled={!noteText.trim() || actionLoading === session.project}
+                              title="Save note"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              className="ui-btn-icon h-5 w-5 !bg-transparent hover:!bg-muted/50 text-muted-foreground"
+                              onClick={() => { setNoteOpenFor(null); setNoteText(''); }}
+                              title="Cancel"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                        <button
+                          type="button"
+                          className="ui-btn-icon h-6 w-6 !bg-transparent hover:!bg-muted/50 text-muted-foreground"
+                          onClick={() => { setNoteOpenFor(isNoteOpen ? null : sessionKey); setNoteText(''); }}
+                          title="Add note"
+                        >
+                          <MessageSquarePlus className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn-icon h-6 w-6 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
+                          onClick={() => handleResume(session.project)}
+                          disabled={actionLoading === session.project}
+                          title="Mark as active"
+                        >
+                          <Play className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn-icon h-6 w-6 !bg-gray-500/20 hover:!bg-gray-500/30 text-gray-700 dark:text-gray-400"
+                          onClick={() => handleDismiss(session.project)}
+                          disabled={actionLoading === session.project}
+                          title="Dismiss"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -660,37 +727,84 @@ export const SessionsPanel = () => {
               <p className="text-xs font-semibold text-muted-foreground">Active</p>
             </div>
             <div className="space-y-2">
-              {data.active.map((session, i) => (
-                <div
-                  key={`${session.project}-active-${i}`}
-                  className={`rounded-md p-3 ${session.isWorking
-                    ? 'bg-green-500/15 border border-green-500/30'
-                    : 'bg-green-500/10 border border-green-500/20'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs font-medium">{session.project}</p>
-                      <InstanceBadge index={session.instanceIndex} />
-                      {session.isWorking && (
+              {data.active.map((session, i) => {
+                const sessionKey = `${session.project}-active-${i}`;
+                const isNoteOpen = noteOpenFor === sessionKey;
+                return (
+                  <div
+                    key={sessionKey}
+                    className={`rounded-md p-3 group ${session.isWorking
+                      ? 'bg-green-500/15 border border-green-500/30'
+                      : 'bg-green-500/10 border border-green-500/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-medium">{session.project}</p>
+                        <InstanceBadge index={session.instanceIndex} />
+                        {session.isWorking && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-green-500/20 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                            Working
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="ui-btn-icon h-5 w-5 !bg-transparent hover:!bg-muted/50 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => { setNoteOpenFor(isNoteOpen ? null : sessionKey); setNoteText(''); }}
+                          title="Add note"
+                        >
+                          <MessageSquarePlus className="w-3 h-3" />
+                        </button>
                         <span className="inline-flex items-center gap-1 rounded-md bg-green-500/20 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400">
-                          <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                          Working
+                          <Clock className="w-2.5 h-2.5" />
+                          {getElapsedTime(session.startTime)}
                         </span>
-                      )}
+                      </div>
                     </div>
-                    <span className="inline-flex items-center gap-1 rounded-md bg-green-500/20 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400">
-                      <Clock className="w-2.5 h-2.5" />
-                      {getElapsedTime(session.startTime)}
-                    </span>
+                    <GitBadges gitInfo={gitInfo[session.project]} />
+                    {session.details && (
+                      <p className="text-[10px] text-muted-foreground mt-1">{session.details}</p>
+                    )}
+                    <SessionNotes notes={session.notes} />
+                    {isNoteOpen && (
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <input
+                          type="text"
+                          value={noteText}
+                          onChange={(e) => setNoteText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddNote(sessionKey, session.project);
+                            if (e.key === 'Escape') { setNoteOpenFor(null); setNoteText(''); }
+                          }}
+                          placeholder="Add a note… (Enter to save)"
+                          className="flex-1 text-xs bg-background/60 border border-border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-ring"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          className="ui-btn-icon h-5 w-5 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
+                          onClick={() => handleAddNote(sessionKey, session.project)}
+                          disabled={!noteText.trim() || actionLoading === session.project}
+                          title="Save note"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn-icon h-5 w-5 !bg-transparent hover:!bg-muted/50 text-muted-foreground"
+                          onClick={() => { setNoteOpenFor(null); setNoteText(''); }}
+                          title="Cancel"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <GitBadges gitInfo={gitInfo[session.project]} />
-                  {session.details && (
-                    <p className="text-[10px] text-muted-foreground mt-1">{session.details}</p>
-                  )}
-                  <SessionNotes notes={session.notes} />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
