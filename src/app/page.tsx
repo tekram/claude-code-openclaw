@@ -10,9 +10,14 @@ export default function Home() {
         <div className="h-full flex flex-col">
           <div className="flex-shrink-0 px-5 py-3 border-b border-border bg-card/50 flex items-center justify-between">
             <h1 className="text-sm font-semibold tracking-tight">Claude Code Sessions</h1>
-            <Link href="/settings" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              Settings
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link href="/insights" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                Insights
+              </Link>
+              <Link href="/settings" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                Settings
+              </Link>
+            </div>
           </div>
           <div className="flex-1 overflow-hidden">
             <SessionsPanel />
