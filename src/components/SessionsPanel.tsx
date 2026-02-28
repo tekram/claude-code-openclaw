@@ -9,6 +9,7 @@ import {
 import type { Session, SessionsData, GitInfo, GitInfoMap } from '@/types/sessions';
 import { dismissSession, markSessionDone, exportSessions, resumeSession } from '@/lib/sessions/actions';
 import { AnalyticsModal } from '@/components/AnalyticsModal';
+import { BriefingBanner } from '@/components/BriefingBanner';
 import {
   formatDuration,
   formatRelativeTime,
@@ -466,6 +467,7 @@ export const SessionsPanel = () => {
     return (
       <div className="h-full flex flex-col">
         {header}
+        <BriefingBanner />
         <div className="flex-1 overflow-auto px-3 py-3">
           <div className="flex gap-3 h-full min-h-0">
 
@@ -589,6 +591,7 @@ export const SessionsPanel = () => {
     <div className="h-full flex flex-col">
       {showAnalytics && <AnalyticsModal onClose={() => setShowAnalytics(false)} />}
       {header}
+      <BriefingBanner />
 
       <div className="flex-1 overflow-auto px-4 py-4 space-y-3">
 
