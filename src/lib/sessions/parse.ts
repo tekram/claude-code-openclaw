@@ -391,9 +391,9 @@ export function parseSessions(): SessionsData {
       if (lastMs > 0 && noPostStartActivity && inactiveMs > PHANTOM_SESSION_THRESHOLD_MS) {
         session.status = 'exited';
         session.endTime = session.startTime;
-        session.interruptReason = 'crash';
+        session.interruptReason = 'unknown';
         session.durationMs = 0;
-        session.details = 'No activity after start — process likely exited immediately';
+        session.details = 'Session ended without exit log — may have been cleared or exited briefly';
       } else if (lastMs > 0 && inactiveMs > threshold) {
         session.status = 'exited';
         session.endTime = session.lastActivityTime || session.startTime;
