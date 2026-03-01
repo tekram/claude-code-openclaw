@@ -1,6 +1,6 @@
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import path from 'path';
-import type { Session, SessionsData, InterruptReason } from '@/types/sessions';
+import type { Session, SessionsData, InterruptReason, PendingApproval } from '@/types/sessions';
 
 export const LOG_PATH = process.env.CLAUDE_DASH_LOG_PATH || path.join(
   process.env.HOME || process.env.USERPROFILE || '',
@@ -17,6 +17,7 @@ export const SESSION_OWNER_DIR = path.join(
 const STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours — active sessions
 const PAUSED_STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 min — paused sessions (hook missed exit)
 const OWNER_FILE_PAUSED_STALE_MS = 10 * 60 * 1000; // 10 min — owner file stuck in paused = dead session
+const PHANTOM_SESSION_THRESHOLD_MS = 5 * 60 * 1000; // 5 min — no post-start events = SessionEnd hook likely never fired
 const HIDE_OLD_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PERMISSION_PAUSE_GRACE_MS = 10_000; // 10s grace for auto-approved tool permissions
 const ACTIVITY_STALE_MS = 5 * 60 * 1000; // 5 min — ignore activity files older than this
@@ -75,6 +76,46 @@ export function readLatestActivity(project: string): { activity: string; isWorki
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Read all active (non-expired) pending approval requests from the session-owners dir.
+ * Merges in the decision file if one exists.
+ */
+export function readPendingApprovals(): PendingApproval[] {
+  if (!existsSync(SESSION_OWNER_DIR)) return [];
+  try {
+    const files = readdirSync(SESSION_OWNER_DIR);
+    const approvals: PendingApproval[] = [];
+    const now = Date.now();
+    for (const file of files) {
+      if (!file.endsWith('.pending-approval.json')) continue;
+      try {
+        const fullPath = path.join(SESSION_OWNER_DIR, file);
+        const data: PendingApproval = JSON.parse(readFileSync(fullPath, 'utf-8'));
+        if (!data.gateType) data.gateType = 'approval'; // backfill for files written before this field
+        if (data.timeoutAt <= now) continue; // expired
+        // Merge decision if it exists
+        const project = file.replace('.pending-approval.json', '');
+        const decisionPath = path.join(SESSION_OWNER_DIR, `${project}.approval-decision.json`);
+        if (existsSync(decisionPath)) {
+          try {
+            const d = JSON.parse(readFileSync(decisionPath, 'utf-8'));
+            if (d.approvalId === data.approvalId) {
+              data.decision = d.decision;
+              data.decidedAt = d.decidedAt;
+              data.decidedBy = d.decidedBy;
+              if (d.selectedLabel) data.selectedLabel = d.selectedLabel;
+            }
+          } catch { /* ignore */ }
+        }
+        approvals.push(data);
+      } catch { /* ignore */ }
+    }
+    return approvals;
+  } catch {
+    return [];
   }
 }
 
@@ -141,9 +182,12 @@ export function parseLogLines(lines: string[]): Session[] {
 
     // For RESUMED after a DISMISSED (or other close): the session may have been removed from
     // openByProject but the process is still running. Re-attach to the most recent session.
+    // Only re-attach to active/paused/dismissed sessions — never to completed or exited ones,
+    // as those are definitively closed and re-attaching would resurrect them spuriously.
     if (openIdx === undefined && action === 'RESUMED') {
       for (let j = allSessions.length - 1; j >= 0; j--) {
-        if (allSessions[j].project === projectName) {
+        const s = allSessions[j];
+        if (s.project === projectName && (s.status === 'active' || s.status === 'paused' || s.status === 'dismissed')) {
           openIdx = j;
           openByProject[projectKey] = j;
           if (projectKey !== projectName) openByProject[projectName] = j;
@@ -156,13 +200,15 @@ export function parseLogLines(lines: string[]): Session[] {
     // exists, fall back to an open unsuffixed session for the same project. This handles the
     // case where a session started before the hook began embedding session-ID suffixes, or
     // where the SessionStart hook failed to fire.
+    // Only fall back to active/paused/dismissed sessions — not completed or exited ones.
     if (openIdx === undefined && hashIdx >= 0) {
       // First try the still-open unsuffixed session.
       let fallbackIdx = openByProject[projectName];
-      // If not open, find the most recent session by bare name (handles post-dismiss continue).
+      // If not open, find the most recent non-terminal session by bare name.
       if (fallbackIdx === undefined) {
         for (let j = allSessions.length - 1; j >= 0; j--) {
-          if (allSessions[j].project === projectName) {
+          const s = allSessions[j];
+          if (s.project === projectName && (s.status === 'active' || s.status === 'paused' || s.status === 'dismissed')) {
             fallbackIdx = j;
             break;
           }
@@ -338,7 +384,17 @@ export function parseSessions(): SessionsData {
       const inactiveMs = now - lastMs;
       const threshold = session.status === 'paused' ? PAUSED_STALE_THRESHOLD_MS : STALE_THRESHOLD_MS;
 
-      if (lastMs > 0 && inactiveMs > threshold) {
+      // Phantom sessions: started but never had any post-start events (lastActivityTime === startTime).
+      // The SessionEnd hook likely never fired (process crashed or exited immediately).
+      // Use a short 5-minute threshold instead of the normal 4-hour one.
+      const noPostStartActivity = session.lastActivityTime === session.startTime;
+      if (lastMs > 0 && noPostStartActivity && inactiveMs > PHANTOM_SESSION_THRESHOLD_MS) {
+        session.status = 'exited';
+        session.endTime = session.startTime;
+        session.interruptReason = 'crash';
+        session.durationMs = 0;
+        session.details = 'No activity after start — process likely exited immediately';
+      } else if (lastMs > 0 && inactiveMs > threshold) {
         session.status = 'exited';
         session.endTime = session.lastActivityTime || session.startTime;
         session.interruptReason = 'timeout';
@@ -421,5 +477,7 @@ export function parseSessions(): SessionsData {
   exited.sort(sortByTime);
   dismissed.sort(sortByTime);
 
-  return { active, paused, completed, exited, dismissed, lastUpdated: new Date().toISOString() };
+  const pendingApprovals = readPendingApprovals();
+
+  return { active, paused, completed, exited, dismissed, pendingApprovals, lastUpdated: new Date().toISOString() };
 }

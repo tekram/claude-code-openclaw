@@ -6,8 +6,8 @@ import {
   X, Check, Download, BarChart3, StickyNote, Play, ListTodo,
   GitBranch, GitPullRequest, List, LayoutGrid, MessageSquarePlus,
 } from 'lucide-react';
-import type { Session, SessionsData, GitInfo, GitInfoMap } from '@/types/sessions';
-import { dismissSession, markSessionDone, exportSessions, resumeSession, addSessionNote } from '@/lib/sessions/actions';
+import type { Session, SessionsData, GitInfo, GitInfoMap, PendingApproval } from '@/types/sessions';
+import { dismissSession, markSessionDone, exportSessions, resumeSession, addSessionNote, decideApproval } from '@/lib/sessions/actions';
 import { AnalyticsModal } from '@/components/AnalyticsModal';
 import { BriefingBanner } from '@/components/BriefingBanner';
 import { SessionCommits } from '@/components/SessionCommits';
@@ -115,7 +115,7 @@ interface KanbanCardProps {
 }
 
 const InstanceBadge = ({ index }: { index?: number }) =>
-  index && index > 1 ? (
+  index != null ? (
     <span className="text-[9px] font-mono text-muted-foreground/60 shrink-0">·{index}</span>
   ) : null;
 
@@ -168,6 +168,114 @@ const KanbanColumn = ({ title, icon, colorClass, children, count }: KanbanColumn
   </div>
 );
 
+// ── Approval gate widget ─────────────────────────────────────────────────────
+
+interface ApprovalWidgetProps {
+  approval: PendingApproval;
+  onDecide: (decision: string) => Promise<void>;
+  deciding: boolean;
+}
+
+const ApprovalWidget = ({ approval, onDecide, deciding }: ApprovalWidgetProps) => {
+  const [secondsLeft, setSecondsLeft] = useState(() =>
+    Math.max(0, Math.ceil((approval.timeoutAt - Date.now()) / 1000))
+  );
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSecondsLeft(Math.max(0, Math.ceil((approval.timeoutAt - Date.now()) / 1000)));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [approval.timeoutAt]);
+
+  // Already decided
+  if (approval.decision) {
+    if (approval.decision === 'answer' && approval.selectedLabel) {
+      return (
+        <div className="mt-2 pt-2 border-t border-yellow-500/30">
+          <span className="text-[10px] text-muted-foreground">
+            ✅ Answered {approval.decidedBy === 'telegram' ? 'via Telegram' : 'from dashboard'}: <span className="font-medium">{approval.selectedLabel}</span>
+          </span>
+        </div>
+      );
+    }
+    const emoji = approval.decision === 'allow' ? '✅' : '❌';
+    const label = approval.decision === 'allow' ? 'Approved' : 'Denied';
+    const by = approval.decidedBy === 'telegram' ? 'via Telegram' : 'from dashboard';
+    return (
+      <div className="mt-2 pt-2 border-t border-yellow-500/30">
+        <span className="text-[10px] text-muted-foreground">{emoji} {label} {by}</span>
+      </div>
+    );
+  }
+
+  const expired = secondsLeft === 0;
+
+  // Question gate: show the question and option buttons
+  if (approval.gateType === 'question' && approval.options && approval.options.length > 0) {
+    return (
+      <div className="mt-2 pt-2 border-t border-yellow-500/30 space-y-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-yellow-700 dark:text-yellow-400 font-medium">Question</span>
+          <span className="text-[10px] text-muted-foreground">
+            {expired ? 'timed out' : `${secondsLeft}s`}
+          </span>
+        </div>
+        {approval.question && (
+          <p className="text-[10px] text-yellow-800 dark:text-yellow-300 italic">&ldquo;{approval.question}&rdquo;</p>
+        )}
+        <div className="flex flex-wrap gap-1">
+          {approval.options.map((opt, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onDecide(`answer:${opt.label}`)}
+              disabled={deciding || expired}
+              className="px-2 py-0.5 text-[10px] rounded bg-blue-500/20 hover:bg-blue-500/30 text-blue-700 dark:text-blue-400 transition-colors disabled:opacity-40"
+              title={opt.description}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Approval gate: show approve/deny buttons
+  return (
+    <div className="mt-2 pt-2 border-t border-yellow-500/30">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] text-yellow-700 dark:text-yellow-400 font-medium">
+          Approval gate
+        </span>
+        <span className="text-[10px] text-muted-foreground">
+          {expired ? 'timed out' : `${secondsLeft}s remaining`}
+        </span>
+        <div className="flex gap-1 ml-auto">
+          <button
+            type="button"
+            onClick={() => onDecide('allow')}
+            disabled={deciding || expired}
+            className="px-2 py-0.5 text-[10px] rounded bg-green-500/20 hover:bg-green-500/30 text-green-700 dark:text-green-400 transition-colors disabled:opacity-40"
+          >
+            ✅ Approve
+          </button>
+          <button
+            type="button"
+            onClick={() => onDecide('deny')}
+            disabled={deciding || expired}
+            className="px-2 py-0.5 text-[10px] rounded bg-red-500/20 hover:bg-red-500/30 text-red-700 dark:text-red-400 transition-colors disabled:opacity-40"
+          >
+            ❌ Deny
+          </button>
+        </div>
+      </div>
+      <p className="text-[9px] text-muted-foreground mt-0.5 font-mono truncate">{approval.humanDescription}</p>
+    </div>
+  );
+};
+
 // ── Main component ──────────────────────────────────────────────────────────
 
 export const SessionsPanel = () => {
@@ -181,6 +289,7 @@ export const SessionsPanel = () => {
   const [gitInfo, setGitInfo] = useState<GitInfoMap>({});
   const [noteOpenFor, setNoteOpenFor] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [approvalDeciding, setApprovalDeciding] = useState<string | null>(null);
   const reconnectDelayRef = useRef(1000);
   const esRef = useRef<EventSource | null>(null);
 
@@ -358,6 +467,22 @@ export const SessionsPanel = () => {
     }
   }, []);
 
+  const handleApprovalDecide = useCallback(async (approval: PendingApproval, decisionStr: string) => {
+    setApprovalDeciding(approval.approvalId);
+    try {
+      if (decisionStr.startsWith('answer:')) {
+        const selectedLabel = decisionStr.slice('answer:'.length);
+        await decideApproval(approval.approvalId, approval.project, 'answer', selectedLabel);
+      } else {
+        await decideApproval(approval.approvalId, approval.project, decisionStr as 'allow' | 'deny');
+      }
+    } catch {
+      // ignore — hook will timeout and fall back
+    } finally {
+      setApprovalDeciding(null);
+    }
+  }, []);
+
   const handleViewStats = useCallback(() => {
     setShowAnalytics(true);
   }, []);
@@ -515,35 +640,48 @@ export const SessionsPanel = () => {
               colorClass="text-yellow-700 dark:text-yellow-400"
               count={data.paused.length}
             >
-              {data.paused.map((session, i) => (
-                <KanbanCard
-                  key={`${session.project}-paused-${i}`}
-                  session={session}
-                  gitInfo={gitInfo[session.project]}
-                  actions={
-                    <>
-                      <button
-                        type="button"
-                        className="ui-btn-icon h-5 w-5 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
-                        onClick={() => handleResume(session.project)}
-                        disabled={actionLoading === session.project}
-                        title="Mark as active"
-                      >
-                        <Play className="w-2.5 h-2.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="ui-btn-icon h-5 w-5 !bg-gray-500/20 hover:!bg-gray-500/30 text-gray-700 dark:text-gray-400"
-                        onClick={() => handleDismiss(session.project)}
-                        disabled={actionLoading === session.project}
-                        title="Dismiss"
-                      >
-                        <X className="w-2.5 h-2.5" />
-                      </button>
-                    </>
-                  }
-                />
-              ))}
+              {data.paused.map((session, i) => {
+                const pendingApproval = data.pendingApprovals?.find(a => a.project === session.project);
+                return (
+                  <div key={`${session.project}-paused-${i}`}>
+                    <KanbanCard
+                      session={session}
+                      gitInfo={gitInfo[session.project]}
+                      actions={
+                        <>
+                          <button
+                            type="button"
+                            className="ui-btn-icon h-5 w-5 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
+                            onClick={() => handleResume(session.project)}
+                            disabled={actionLoading === session.project}
+                            title="Mark as active"
+                          >
+                            <Play className="w-2.5 h-2.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="ui-btn-icon h-5 w-5 !bg-gray-500/20 hover:!bg-gray-500/30 text-gray-700 dark:text-gray-400"
+                            onClick={() => handleDismiss(session.project)}
+                            disabled={actionLoading === session.project}
+                            title="Dismiss"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </>
+                      }
+                    />
+                    {pendingApproval && (
+                      <div className="bg-background border-x border-b border-border rounded-b-md px-2.5 pb-2 -mt-1">
+                        <ApprovalWidget
+                          approval={pendingApproval}
+                          onDecide={(d) => handleApprovalDecide(pendingApproval, d)}
+                          deciding={approvalDeciding === pendingApproval.approvalId}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </KanbanColumn>
 
             {/* Interrupted */}
@@ -627,6 +765,7 @@ export const SessionsPanel = () => {
               {data.paused.map((session, i) => {
                 const sessionKey = `${session.project}-paused-${i}`;
                 const isNoteOpen = noteOpenFor === sessionKey;
+                const pendingApproval = data.pendingApprovals?.find(a => a.project === session.project);
                 return (
                   <div
                     key={sessionKey}
@@ -645,6 +784,13 @@ export const SessionsPanel = () => {
                           </p>
                         )}
                         <SessionNotes notes={session.notes} />
+                        {pendingApproval && (
+                          <ApprovalWidget
+                            approval={pendingApproval}
+                            onDecide={(d) => handleApprovalDecide(pendingApproval, d)}
+                            deciding={approvalDeciding === pendingApproval.approvalId}
+                          />
+                        )}
                         <p className="text-[10px] text-muted-foreground mt-1">
                           Paused {formatRelativeTime(session.lastActivityTime || session.startTime)} · started {formatTime(session.startTime)}
                         </p>

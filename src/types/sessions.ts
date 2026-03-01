@@ -27,12 +27,38 @@ export interface Session {
   endCommitHash?: string;     // git HEAD at session end (40-char SHA)
 }
 
+export interface PendingApprovalOption {
+  label: string;
+  description?: string;
+}
+
+export interface PendingApproval {
+  approvalId: string;
+  sessionId: string;
+  project: string;
+  toolName: string;
+  humanDescription: string;
+  gateType: 'approval' | 'question';   // 'approval' = Bash/Write/Edit gate, 'question' = AskUserQuestion
+  question?: string;                    // for gateType='question': the question text
+  options?: PendingApprovalOption[];    // for gateType='question': selectable options
+  createdAt: number;
+  timeoutAt: number;
+  telegramMessageId?: number;
+  telegramChatId?: string;
+  // Merged from decision file (if already decided)
+  decision?: 'allow' | 'deny' | 'answer';
+  decidedAt?: number;
+  decidedBy?: 'telegram' | 'dashboard';
+  selectedLabel?: string;               // for decision='answer': the chosen option label
+}
+
 export interface SessionsData {
   active: Session[];
   paused: Session[];
   completed: Session[];
   exited: Session[];
   dismissed?: Session[];
+  pendingApprovals?: PendingApproval[];
   lastUpdated: string;
 }
 

@@ -14,11 +14,30 @@ export interface NotificationRule {
 
 export type DeliveryMode = 'openclaw' | 'direct';
 
+export interface ApprovalGatesPrefs {
+  enabled: boolean;
+  gatedTools: ('Bash' | 'Write' | 'Edit' | 'NotebookEdit')[];
+  timeoutSeconds: number;
+  onTimeout: 'allow' | 'deny';
+  questionGating?: boolean;        // also gate AskUserQuestion with options
+  questionTimeoutSeconds?: number; // timeout for questions (default 300s = 5 min)
+}
+
+export const DEFAULT_APPROVAL_GATES: ApprovalGatesPrefs = {
+  enabled: false,
+  gatedTools: ['Bash', 'Write', 'Edit', 'NotebookEdit'],
+  timeoutSeconds: 60,
+  onTimeout: 'allow',
+  questionGating: false,
+  questionTimeoutSeconds: 300,
+};
+
 export interface NotificationPrefs {
   channel: string;        // 'telegram' | 'whatsapp' | 'discord' | 'slack'
   to: string;             // recipient ID (auto-populated from OpenClaw)
   deliveryMode: DeliveryMode; // 'openclaw' = via /hooks/agent (logged), 'direct' = Bot API
   rules: NotificationRule[];
+  approvalGates?: ApprovalGatesPrefs;
 }
 
 export const DEFAULT_PREFS: NotificationPrefs = {

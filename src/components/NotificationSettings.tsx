@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import type { NotificationPrefs, NotificationRule, NotificationEventType, OpenClawConfig, DeliveryMode } from '@/types/notifications';
-import { DEFAULT_PREFS, RULE_LABELS } from '@/types/notifications';
+import type { NotificationPrefs, NotificationRule, NotificationEventType, OpenClawConfig, DeliveryMode, ApprovalGatesPrefs } from '@/types/notifications';
+import { DEFAULT_PREFS, DEFAULT_APPROVAL_GATES, RULE_LABELS } from '@/types/notifications';
 
 const MIN_OPTIONS = [0, 5, 10, 15, 20, 30, 60];
 
@@ -95,6 +95,15 @@ export function NotificationSettings() {
       setTestError(data.error || 'Setup failed');
     }
   }, []);
+
+  const updateApprovalGates = useCallback((patch: Partial<ApprovalGatesPrefs>) => {
+    setPrefs(prev => {
+      const current = prev.approvalGates || DEFAULT_APPROVAL_GATES;
+      const updated: NotificationPrefs = { ...prev, approvalGates: { ...current, ...patch } };
+      save(updated);
+      return updated;
+    });
+  }, [save]);
 
   const sendTest = useCallback(async () => {
     setTestState('sending');
@@ -305,6 +314,154 @@ export function NotificationSettings() {
             );
           })}
         </div>
+      </div>
+
+      {/* Approval Gates */}
+      <div className="space-y-3 pt-2 border-t border-border">
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">Approval Gates</label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Pause Claude and send Approve/Deny buttons before running gated tools
+            </p>
+          </div>
+          <button
+            onClick={() => updateApprovalGates({ enabled: !(prefs.approvalGates?.enabled ?? false) })}
+            className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
+              prefs.approvalGates?.enabled ? 'bg-foreground' : 'bg-muted'
+            }`}
+            aria-label={prefs.approvalGates?.enabled ? 'Disable approval gates' : 'Enable approval gates'}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background transition-transform ${
+              prefs.approvalGates?.enabled ? 'translate-x-4' : 'translate-x-0'
+            }`} />
+          </button>
+        </div>
+
+        {prefs.approvalGates?.enabled && (
+          <div className="space-y-4 pl-1">
+            {/* Gated tools */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Gate these tools</label>
+              <div className="flex flex-wrap gap-2">
+                {(['Bash', 'Write', 'Edit', 'NotebookEdit'] as const).map(tool => {
+                  const checked = prefs.approvalGates?.gatedTools.includes(tool) ?? false;
+                  return (
+                    <button
+                      key={tool}
+                      onClick={() => {
+                        const current = prefs.approvalGates?.gatedTools || [];
+                        updateApprovalGates({
+                          gatedTools: checked
+                            ? current.filter(t => t !== tool)
+                            : [...current, tool],
+                        });
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+                        checked
+                          ? 'bg-foreground text-background border-foreground'
+                          : 'border-border hover:border-foreground/40'
+                      }`}
+                    >
+                      {tool}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Timeout */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">
+                Timeout: {prefs.approvalGates?.timeoutSeconds ?? 60}s
+              </label>
+              <input
+                type="range"
+                min={15}
+                max={120}
+                step={15}
+                value={prefs.approvalGates?.timeoutSeconds ?? 60}
+                onChange={e => updateApprovalGates({ timeoutSeconds: Number(e.target.value) })}
+                className="w-full accent-foreground"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>15s</span><span>60s</span><span>120s</span>
+              </div>
+            </div>
+
+            {/* Question gating */}
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs text-muted-foreground font-medium">Answer questions via Telegram</label>
+                <p className="text-[10px] text-muted-foreground">
+                  Single-choice questions get Telegram buttons instead of waiting for keyboard
+                </p>
+              </div>
+              <button
+                onClick={() => updateApprovalGates({ questionGating: !(prefs.approvalGates?.questionGating ?? false) })}
+                className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ml-4 ${
+                  prefs.approvalGates?.questionGating ? 'bg-foreground' : 'bg-muted'
+                }`}
+                aria-label="Toggle question gating"
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background transition-transform ${
+                  prefs.approvalGates?.questionGating ? 'translate-x-4' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {prefs.approvalGates?.questionGating && (
+              <div className="space-y-1.5 pl-1">
+                <label className="text-xs text-muted-foreground font-medium">
+                  Question timeout: {prefs.approvalGates?.questionTimeoutSeconds ?? 300}s
+                </label>
+                <input
+                  type="range"
+                  min={60}
+                  max={600}
+                  step={60}
+                  value={prefs.approvalGates?.questionTimeoutSeconds ?? 300}
+                  onChange={e => updateApprovalGates({ questionTimeoutSeconds: Number(e.target.value) })}
+                  className="w-full accent-foreground"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>1 min</span><span>5 min</span><span>10 min</span>
+                </div>
+              </div>
+            )}
+
+            {/* On timeout */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">If no response by timeout</label>
+              <div className="flex gap-2">
+                {(['allow', 'deny'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => updateApprovalGates({ onTimeout: mode })}
+                    className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                      (prefs.approvalGates?.onTimeout ?? 'allow') === mode
+                        ? 'bg-foreground text-background border-foreground'
+                        : 'border-border hover:border-foreground/40'
+                    }`}
+                  >
+                    {mode === 'allow' ? 'Auto-allow' : 'Auto-deny'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Poller hint */}
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5 space-y-1">
+              <p className="text-xs font-medium">Telegram poller required for phone buttons</p>
+              <p className="text-xs text-muted-foreground">
+                Dashboard Approve/Deny buttons work without it. For Telegram inline buttons, run:
+              </p>
+              <code className="text-[10px] bg-background border border-border rounded px-1.5 py-0.5 block font-mono">
+                node ~/.openclaw/workspace/telegram-poller.js
+              </code>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Test notification */}

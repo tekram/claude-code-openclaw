@@ -134,6 +134,27 @@ export async function addSessionNote(
 }
 
 /**
+ * Approve, deny, or answer a pending approval gate request
+ */
+export async function decideApproval(
+  approvalId: string,
+  project: string,
+  decision: 'allow' | 'deny' | 'answer',
+  selectedLabel?: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/approvals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approvalId, project, decision, selectedLabel }),
+    });
+    return await response.json();
+  } catch {
+    return { ok: false, error: 'Network error' };
+  }
+}
+
+/**
  * Export sessions (JSON or CSV)
  */
 export async function exportSessions(format: 'json' | 'csv' = 'json', project?: string): Promise<void> {
