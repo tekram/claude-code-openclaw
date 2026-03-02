@@ -138,11 +138,13 @@ export function BriefingBanner() {
 
   return (
     <div className="flex-shrink-0 border-b border-amber-500/20 bg-amber-500/5 dark:bg-amber-500/5">
-      {/* Summary row */}
-      <button
-        type="button"
-        className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-amber-500/5 transition-colors"
+      {/* Summary row — div instead of button so the dismiss button inside is valid HTML */}
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-amber-500/5 transition-colors cursor-pointer"
         onClick={() => setExpanded((e) => !e)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v); }}
         aria-expanded={expanded}
         aria-label="Morning Briefing — toggle details"
       >
@@ -192,7 +194,7 @@ export function BriefingBanner() {
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
-      </button>
+      </div>
 
       {/* Expanded: per-project rows */}
       {expanded && (
