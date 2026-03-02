@@ -15,6 +15,9 @@ export default function Home() {
               <Link href="/insights" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                 Insights
               </Link>
+              <Link href="/stats" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                Stats
+              </Link>
               <Link href="/history" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                 History
               </Link>
