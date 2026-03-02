@@ -5,12 +5,16 @@ import { Plus, Trash2, FolderOpen } from 'lucide-react';
 
 interface ProjectSettings {
   projects: Record<string, string>;
+  defaultProjectPath?: string;
 }
 
 export const ProjectSettings = () => {
   const [projects, setProjects] = useState<Record<string, string>>({});
+  const [defaultProjectPath, setDefaultProjectPath] = useState('');
+  const [defaultPathDraft, setDefaultPathDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingDefault, setSavingDefault] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPath, setNewPath] = useState('');
   const [addError, setAddError] = useState('');
@@ -22,6 +26,9 @@ export const ProjectSettings = () => {
       .then((r) => r.ok ? r.json() as Promise<ProjectSettings> : null)
       .then((data) => {
         if (data?.projects) setProjects(data.projects);
+        const dp = data?.defaultProjectPath ?? '';
+        setDefaultProjectPath(dp);
+        setDefaultPathDraft(dp);
       })
       .catch(() => {/* ignore */})
       .finally(() => setLoading(false));
@@ -33,7 +40,7 @@ export const ProjectSettings = () => {
       const res = await fetch('/api/settings/projects', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projects: updated }),
+        body: JSON.stringify({ projects: updated, defaultProjectPath }),
       });
       if (res.ok) {
         const data = await res.json() as ProjectSettings;
@@ -43,6 +50,27 @@ export const ProjectSettings = () => {
       console.error('Failed to save project settings:', err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveDefaultPath = async () => {
+    setSavingDefault(true);
+    try {
+      const res = await fetch('/api/settings/projects', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects, defaultProjectPath: defaultPathDraft.trim() }),
+      });
+      if (res.ok) {
+        const data = await res.json() as ProjectSettings;
+        const dp = data.defaultProjectPath ?? '';
+        setDefaultProjectPath(dp);
+        setDefaultPathDraft(dp);
+      }
+    } catch (err) {
+      console.error('Failed to save default path:', err);
+    } finally {
+      setSavingDefault(false);
     }
   };
 
@@ -85,6 +113,36 @@ export const ProjectSettings = () => {
 
   return (
     <div className="space-y-3 px-4 py-3">
+      {/* Default project path */}
+      <div>
+        <label className="block text-xs text-muted-foreground mb-1">Default project path</label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            className="ui-input flex-1 rounded px-2.5 py-1.5 text-xs font-mono"
+            placeholder="C:\Users\yourname\my-project"
+            value={defaultPathDraft}
+            onChange={(e) => setDefaultPathDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveDefaultPath(); }}
+          />
+          <button
+            type="button"
+            className="ui-btn-primary px-2.5 py-1.5 text-xs"
+            onClick={saveDefaultPath}
+            disabled={savingDefault || defaultPathDraft.trim() === defaultProjectPath}
+          >
+            {savingDefault ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Pre-fills the path field when dispatching a capture to Claude Code with no project tag match.
+        </p>
+      </div>
+
+      <div className="border-t border-border/50 pt-3">
+        <p className="text-xs font-medium text-muted-foreground mb-2">Per-project paths</p>
+      </div>
+
       {entries.length === 0 && (
         <p className="text-xs text-muted-foreground">
           No project paths configured. Add one below to enable Claude Code dispatch.

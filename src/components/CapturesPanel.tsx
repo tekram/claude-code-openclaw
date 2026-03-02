@@ -27,6 +27,7 @@ export const CapturesPanel = () => {
   const [busy, setBusy] = useState(false);
   const [agents, setAgents] = useState<OpenClawAgent[]>([]);
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>({});
+  const [defaultProjectPath, setDefaultProjectPath] = useState('');
 
   // Assign modal state
   const [assignModal, setAssignModal] = useState<AssignModal | null>(null);
@@ -74,6 +75,7 @@ export const CapturesPanel = () => {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.projects) setProjectPaths(data.projects as Record<string, string>);
+        if (data?.defaultProjectPath) setDefaultProjectPath(data.defaultProjectPath as string);
       })
       .catch(() => {/* ignore */});
   }, []);
@@ -156,7 +158,7 @@ export const CapturesPanel = () => {
     setAssignMessage(item.text);
     setAssignAgentId(agents[0]?.id || '');
     setClaudeTask(item.text);
-    setClaudeProjectPath(item.project ? (projectPaths[item.project] || '') : '');
+    setClaudeProjectPath(item.project ? (projectPaths[item.project] || defaultProjectPath) : defaultProjectPath);
     setAssignError('');
   };
 
