@@ -136,6 +136,7 @@ async function dispatchClaude(body: {
     startedAt,
     pid: proc.pid,
     projectName,
+    task: task.trim(),
   }), 'utf-8');
 
   const MAX_BYTES = 50 * 1024;
@@ -160,6 +161,7 @@ async function dispatchClaude(body: {
         startedAt,
         pid: proc.pid,
         projectName,
+        task: task.trim(),
       }), 'utf-8');
     } catch { /* ignore mid-write errors */ }
   };
@@ -213,7 +215,13 @@ async function dispatchClaude(body: {
     } catch { /* sessions.log may not exist yet; badge is optional */ }
   }, 2000);
 
-  proc.on('close', (exitCode) => {
+  // Finalise the result file. Called from both 'exit' and 'close' — whichever fires first.
+  // On Windows with shell:true + stdin:inherit, 'close' sometimes never fires (pipe handle
+  // leak), so we listen to 'exit' as a reliable fallback.
+  let finalised = false;
+  const finalise = (exitCode: number | null) => {
+    if (finalised) return;
+    finalised = true;
     if (writeDebounce) clearTimeout(writeDebounce);
 
     // Prefer parsed assistant text; fall back to raw stdout so error messages are visible
@@ -233,10 +241,14 @@ async function dispatchClaude(body: {
       completedAt: new Date().toISOString(),
       pid: proc.pid,
       projectName,
+      task: task.trim(),
     }), 'utf-8');
 
     proc.unref();
-  });
+  };
+
+  proc.on('exit', (exitCode) => finalise(exitCode));
+  proc.on('close', (exitCode) => finalise(exitCode));
 
   items[index].assignedTo = 'claude';
   items[index].taskId = taskId;

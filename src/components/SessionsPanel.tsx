@@ -4,12 +4,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Activity, Clock, AlertCircle, CheckCircle, XCircle, RefreshCw,
   X, Check, Download, BarChart3, StickyNote, Play, ListTodo,
-  GitBranch, GitPullRequest, List, LayoutGrid, MessageSquarePlus,
+  GitBranch, GitPullRequest, List, LayoutGrid, MessageSquarePlus, ExternalLink,
 } from 'lucide-react';
 import type { Session, SessionsData, GitInfo, GitInfoMap, PendingApproval } from '@/types/sessions';
 import { dismissSession, markSessionDone, exportSessions, resumeSession, addSessionNote, decideApproval } from '@/lib/sessions/actions';
 import { AnalyticsModal } from '@/components/AnalyticsModal';
 import { BriefingBanner } from '@/components/BriefingBanner';
+import { TaskOutputModal } from '@/components/TaskOutputModal';
 import { SessionCommits } from '@/components/SessionCommits';
 import {
   formatDuration,
@@ -43,18 +44,37 @@ const getElapsedTime = (startTime: string, endTime?: string) => {
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-const SessionNotes = ({ notes }: { notes?: string[] }) => {
+const SessionNotes = ({
+  notes,
+  onViewOutput,
+}: {
+  notes?: string[];
+  onViewOutput?: (taskId: string) => void;
+}) => {
   if (!notes || notes.length === 0) return null;
   return (
     <div className="mt-1.5 space-y-0.5">
       {notes.map((note, i) => {
         if (note.startsWith('[web-dispatch]')) {
+          const taskIdMatch = note.match(/taskId=(\S+)/);
+          const taskId = taskIdMatch?.[1];
           return (
-            <div key={i} className="mt-1">
+            <div key={i} className="mt-1 flex items-center gap-2">
               <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-400">
                 <ListTodo className="w-2.5 h-2.5" />
                 From captures
               </span>
+              {taskId && onViewOutput && (
+                <button
+                  type="button"
+                  onClick={() => onViewOutput(taskId)}
+                  className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline"
+                  title="View task output"
+                >
+                  View output
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </button>
+              )}
             </div>
           );
         }
@@ -112,6 +132,7 @@ interface KanbanCardProps {
   session: Session;
   gitInfo?: GitInfo;
   actions?: React.ReactNode;
+  onViewOutput?: (taskId: string) => void;
 }
 
 const InstanceBadge = ({ index }: { index?: number }) =>
@@ -119,7 +140,7 @@ const InstanceBadge = ({ index }: { index?: number }) =>
     <span className="text-[9px] font-mono text-muted-foreground/60 shrink-0">·{index}</span>
   ) : null;
 
-const KanbanCard = ({ session, gitInfo, actions }: KanbanCardProps) => (
+const KanbanCard = ({ session, gitInfo, actions, onViewOutput }: KanbanCardProps) => (
   <div className="bg-background border border-border rounded-md p-2.5 group">
     <div className="flex items-start justify-between gap-1">
       <div className="flex items-center gap-1 min-w-0 flex-1">
@@ -139,7 +160,7 @@ const KanbanCard = ({ session, gitInfo, actions }: KanbanCardProps) => (
     <p className="text-[9px] text-muted-foreground mt-1">
       {getElapsedTime(session.startTime, session.endTime)}
     </p>
-    <SessionNotes notes={session.notes} />
+    <SessionNotes notes={session.notes} onViewOutput={onViewOutput} />
   </div>
 );
 
@@ -290,6 +311,7 @@ export const SessionsPanel = () => {
   const [noteOpenFor, setNoteOpenFor] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
   const [approvalDeciding, setApprovalDeciding] = useState<string | null>(null);
+  const [taskOutputModal, setTaskOutputModal] = useState<string | null>(null);
   const reconnectDelayRef = useRef(1000);
   const esRef = useRef<EventSource | null>(null);
 
@@ -612,6 +634,7 @@ export const SessionsPanel = () => {
   if (viewMode === 'kanban') {
     return (
       <div className="h-full flex flex-col">
+        {taskOutputModal && <TaskOutputModal taskId={taskOutputModal} onClose={() => setTaskOutputModal(null)} />}
         {header}
         <BriefingBanner />
         <div className="flex-1 overflow-auto px-3 py-3">
@@ -629,6 +652,7 @@ export const SessionsPanel = () => {
                   key={`${session.project}-active-${i}`}
                   session={session}
                   gitInfo={gitInfo[session.project]}
+                  onViewOutput={(id) => setTaskOutputModal(id)}
                 />
               ))}
             </KanbanColumn>
@@ -669,6 +693,7 @@ export const SessionsPanel = () => {
                           </button>
                         </>
                       }
+                      onViewOutput={(id) => setTaskOutputModal(id)}
                     />
                     {pendingApproval && (
                       <div className="bg-background border-x border-b border-border rounded-b-md px-2.5 pb-2 -mt-1">
@@ -718,6 +743,7 @@ export const SessionsPanel = () => {
                       </button>
                     </>
                   }
+                  onViewOutput={(id) => setTaskOutputModal(id)}
                 />
               ))}
             </KanbanColumn>
@@ -734,6 +760,7 @@ export const SessionsPanel = () => {
                   key={`${session.project}-completed-${i}`}
                   session={session}
                   gitInfo={gitInfo[session.project]}
+                  onViewOutput={(id) => setTaskOutputModal(id)}
                 />
               ))}
             </KanbanColumn>
@@ -749,6 +776,7 @@ export const SessionsPanel = () => {
   return (
     <div className="h-full flex flex-col">
       {showAnalytics && <AnalyticsModal onClose={() => setShowAnalytics(false)} />}
+      {taskOutputModal && <TaskOutputModal taskId={taskOutputModal} onClose={() => setTaskOutputModal(null)} />}
       {header}
       <BriefingBanner />
 
@@ -783,7 +811,7 @@ export const SessionsPanel = () => {
                             {session.details}
                           </p>
                         )}
-                        <SessionNotes notes={session.notes} />
+                        <SessionNotes notes={session.notes} onViewOutput={(id) => setTaskOutputModal(id)} />
                         {pendingApproval && (
                           <ApprovalWidget
                             approval={pendingApproval}
@@ -913,7 +941,7 @@ export const SessionsPanel = () => {
                     {session.details && (
                       <p className="text-[10px] text-muted-foreground mt-1">{session.details}</p>
                     )}
-                    <SessionNotes notes={session.notes} />
+                    <SessionNotes notes={session.notes} onViewOutput={(id) => setTaskOutputModal(id)} />
                     {isNoteOpen && (
                       <div className="flex items-center gap-1.5 mt-2">
                         <input
@@ -997,7 +1025,7 @@ export const SessionsPanel = () => {
                         {session.details && (
                           <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{session.details}</p>
                         )}
-                        <SessionNotes notes={session.notes} />
+                        <SessionNotes notes={session.notes} onViewOutput={(id) => setTaskOutputModal(id)} />
                         <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} startHash={session.startCommitHash} endHash={session.endCommitHash} />
                       </div>
                       <div className="flex items-center gap-1">
@@ -1096,7 +1124,7 @@ export const SessionsPanel = () => {
                     {session.details && (
                       <p className="text-[10px] text-muted-foreground mt-1">{session.details}</p>
                     )}
-                    <SessionNotes notes={session.notes} />
+                    <SessionNotes notes={session.notes} onViewOutput={(id) => setTaskOutputModal(id)} />
                     <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} startHash={session.startCommitHash} endHash={session.endCommitHash} />
                   </div>
                 );
