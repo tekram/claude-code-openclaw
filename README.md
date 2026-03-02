@@ -16,7 +16,7 @@ A local dashboard for Claude Code session tracking. See which sessions are activ
 - **Session actions** — Dismiss, mark done, add notes directly from the dashboard
 - **Crash detection** — Distinguishes clean exits from unexpected crashes
 - **Captures/Todos** — Optional: manage a `~/CAPTURES.md` idea backlog alongside your sessions
-- **Dispatch tasks from the dashboard** — Send a capture item directly to Claude Code CLI. Tracked with live output streaming, PID, stderr capture, and a "From captures" badge in the sessions panel.
+- **Dispatch tasks from the dashboard** — Send a capture item directly to Claude Code CLI and watch output stream live in the result modal via SSE. Stderr captured separately, PID visible while running, and a "From captures" badge links the session back to the originating item.
 - **Export** — Download session history as JSON or CSV
 
 ## How it works
@@ -231,11 +231,11 @@ The dashboard can manage a `~/CAPTURES.md` Markdown checklist as a lightweight i
 Each capture item has a dispatch button that sends the task to an agent:
 
 - **OpenClaw agent** — posts to your local gateway; result delivered back via Telegram
-- **Claude Code CLI** — spawns `claude -p` locally and tracks the run in the dashboard:
-  - PID visible while running (useful for debugging or killing a runaway task)
-  - Output streams live to the result modal every 2 seconds — no waiting until completion
-  - stderr captured separately and shown in a distinct block on failure
+- **Claude Code CLI** — spawns `claude --print` locally with `--output-format stream-json` and tracks the run in the dashboard:
+  - Open the result modal while the task is running to watch output appear in real time via SSE (Server-Sent Events) — no polling, sub-second latency
+  - PID visible while running; stderr captured separately and shown in a distinct block on failure
   - The corresponding session in the sessions panel gets a **"From captures"** badge so you can trace it back to the originating item
+  - Set a **default project path** in Settings → Project Paths so the path field pre-fills automatically on every dispatch
 
 ## API
 
@@ -248,7 +248,8 @@ Each capture item has a dispatch button that sends the task to an agent:
 | `/api/sessions/export` | GET | JSON or CSV export (`?format=csv&project=optional`) |
 | `/api/todos` | GET, POST, PATCH, DELETE | Read/write `~/CAPTURES.md` |
 | `/api/todos/assign` | POST | Dispatch a capture to an OpenClaw agent or Claude Code CLI |
-| `/api/tasks/result` | GET | Poll result of a CLI-dispatched task (`?id=<taskId>`) |
+| `/api/tasks/result` | GET | Snapshot result of a CLI-dispatched task (`?id=<taskId>`) |
+| `/api/tasks/stream` | GET | SSE stream for a CLI-dispatched task — pushes output chunks in real time, auto-closes when done (`?id=<taskId>`) |
 | `/api/settings/projects` | GET, PUT | Read/write project name → absolute path mappings (used for git/PR info) |
 | `/api/openclaw/config` | GET | Detect OpenClaw gateway config & available channels |
 | `/api/openclaw/setup-hooks` | POST | Auto-configure hooks token in `~/.openclaw/openclaw.json` |
