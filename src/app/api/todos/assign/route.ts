@@ -106,14 +106,31 @@ async function dispatchClaude(body: {
   const resultPath = path.join(taskResultsDir, `${taskId}.json`);
   const startedAt = new Date().toISOString();
 
-  const proc = spawn('claude', ['-p', task.trim(), '--dangerously-skip-permissions'], {
+  // Strip ALL Claude Code session env vars so the spawned process isn't rejected as a nested session.
+  // env | grep -i claude shows: CLAUDECODE=1, CLAUDE_CODE_ENTRYPOINT=cli, CLAUDE_CODE_SESSION_ID
+  const spawnEnv = { ...process.env };
+  delete spawnEnv.CLAUDECODE;
+  delete spawnEnv.CLAUDE_CODE_ENTRYPOINT;
+  delete spawnEnv.CLAUDE_CODE_SESSION_ID;
+
+  // Claude Code requires stdin:'inherit' — piping/ignoring stdin causes it to hang or exit 1.
+  // windowsHide prevents a console window popping up on Windows.
+  // No detached:true so we don't get a new console window; unref() keeps it independent.
+  const proc = spawn('claude', [
+    '--print', task.trim(),
+    '--dangerously-skip-permissions',
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+  ], {
     cwd: projectPath.trim(),
-    detached: true,
     shell: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    stdio: ['inherit', 'pipe', 'pipe'],
+    env: spawnEnv,
   });
 
-  // Item 1: write PID + projectName immediately so the result file is useful from the start
+  // Write PID + projectName immediately so the result file is useful from the start
   fs.writeFileSync(resultPath, JSON.stringify({
     status: 'running',
     startedAt,
@@ -121,31 +138,73 @@ async function dispatchClaude(body: {
     projectName,
   }), 'utf-8');
 
-  // Item 2: incremental stdout — flush current output to result file every 2 seconds
-  const chunks: Buffer[] = [];
-  const flushInterval = setInterval(() => {
-    if (chunks.length === 0) return;
-    const partial = Buffer.concat(chunks).toString('utf-8');
+  const MAX_BYTES = 50 * 1024;
+
+  // Parse NDJSON events from stdout; write to result file on each text chunk (debounced).
+  // rawStdout is kept as a fallback so that plain-text error messages (e.g. nested session
+  // guard) are visible in the result even when no valid JSON events are parsed.
+  let lineBuffer = '';
+  let latestText = '';
+  let rawStdout = '';
+  let writeDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  const flushWrite = () => {
+    const raw = latestText;
+    const output = Buffer.byteLength(raw, 'utf-8') > MAX_BYTES
+      ? Buffer.from(raw, 'utf-8').slice(0, MAX_BYTES).toString('utf-8') + '\n\n[Output truncated at 50KB]'
+      : raw;
     try {
       fs.writeFileSync(resultPath, JSON.stringify({
         status: 'running',
-        output: partial || undefined,
+        output: output || undefined,
         startedAt,
         pid: proc.pid,
         projectName,
       }), 'utf-8');
     } catch { /* ignore mid-write errors */ }
-  }, 2000);
+  };
 
-  proc.stdout!.on('data', (c: Buffer) => chunks.push(c));
+  const scheduleWrite = () => {
+    if (writeDebounce) clearTimeout(writeDebounce);
+    writeDebounce = setTimeout(flushWrite, 150);
+  };
 
-  // Item 3: capture stderr separately
+  proc.stdout!.on('data', (chunk: Buffer) => {
+    rawStdout += chunk.toString('utf-8');
+    lineBuffer += chunk.toString('utf-8');
+    const lines = lineBuffer.split('\n');
+    lineBuffer = lines.pop() ?? ''; // keep any incomplete trailing line
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line) as Record<string, unknown>;
+        if (event.type === 'assistant') {
+          // Each assistant event contains the full text accumulated so far
+          const msg = event.message as { content?: Array<{ type: string; text?: string }> } | undefined;
+          const text = msg?.content
+            ?.filter((c) => c.type === 'text')
+            .map((c) => c.text ?? '')
+            .join('') ?? '';
+          if (text) {
+            latestText = text;
+            scheduleWrite();
+          }
+        } else if (event.type === 'result') {
+          // Final result event — use its result field as the authoritative output
+          if (writeDebounce) clearTimeout(writeDebounce);
+          const resultText = (event.result as string) || latestText;
+          if (resultText) latestText = resultText;
+        }
+      } catch { /* ignore non-JSON lines */ }
+    }
+  });
+
+  // Capture stderr separately (tool errors, API errors, etc.)
   const stderrChunks: Buffer[] = [];
   proc.stderr!.on('data', (c: Buffer) => stderrChunks.push(c));
 
-  // Item 5: write a NOTE to sessions.log 2s after spawn so the session (started by the hook)
-  // gets a [web-dispatch] marker that the SessionsPanel renders as a "From captures" badge.
-  // 2s gives the SessionStart hook plenty of time to fire and write the START entry first.
+  // Write a NOTE to sessions.log 2s after spawn so the session gets a [web-dispatch] badge.
   setTimeout(() => {
     try {
       const timestamp = new Date().toLocaleString('sv-SE');
@@ -155,10 +214,10 @@ async function dispatchClaude(body: {
   }, 2000);
 
   proc.on('close', (exitCode) => {
-    clearInterval(flushInterval);
+    if (writeDebounce) clearTimeout(writeDebounce);
 
-    const raw = Buffer.concat(chunks).toString('utf-8').trim();
-    const MAX_BYTES = 50 * 1024;
+    // Prefer parsed assistant text; fall back to raw stdout so error messages are visible
+    const raw = (latestText || rawStdout).trim();
     const output = Buffer.byteLength(raw, 'utf-8') > MAX_BYTES
       ? Buffer.from(raw, 'utf-8').slice(0, MAX_BYTES).toString('utf-8') + '\n\n[Output truncated at 50KB]'
       : raw;
