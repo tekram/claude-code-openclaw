@@ -203,44 +203,40 @@ export const CapturesPanel = () => {
     }
   };
 
-  const fetchResult = useCallback(async (taskId: string): Promise<TaskResult | null> => {
-    const res = await fetch(`/api/tasks/result?id=${encodeURIComponent(taskId)}`);
-    if (res.status === 404) throw new Error('Result not found — the result file may have been deleted.');
-    if (!res.ok) {
-      const json = await res.json() as { error?: string };
-      throw new Error(json.error || 'Failed to load result');
-    }
-    return res.json() as Promise<TaskResult>;
-  }, []);
-
-  const openResultModal = async (item: TodoItem) => {
+  const openResultModal = (item: TodoItem) => {
     if (!item.taskId) return;
     setResultModal({ taskId: item.taskId, itemText: item.text });
     setTaskResult(null);
     setResultError('');
     setResultLoading(true);
-
-    try {
-      const result = await fetchResult(item.taskId);
-      setTaskResult(result);
-    } catch (err) {
-      setResultError(err instanceof Error ? err.message : 'Network error');
-    } finally {
-      setResultLoading(false);
-    }
   };
 
-  // Poll result every 2s while the modal is open and the task is still running
+  // SSE stream: connect when result modal opens, auto-close when task reaches terminal state
   useEffect(() => {
-    if (!resultModal || !taskResult || taskResult.status !== 'running') return;
-    const interval = setInterval(async () => {
+    if (!resultModal) return;
+
+    let receivedData = false;
+    const es = new EventSource(`/api/tasks/stream?id=${encodeURIComponent(resultModal.taskId)}`);
+
+    es.onmessage = (event: MessageEvent) => {
+      receivedData = true;
       try {
-        const result = await fetchResult(resultModal.taskId);
+        const result = JSON.parse(event.data as string) as TaskResult;
         setTaskResult(result);
-      } catch { /* ignore poll errors */ }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [resultModal, taskResult?.status, fetchResult]);
+        setResultLoading(false);
+      } catch { /* ignore parse errors */ }
+    };
+
+    es.onerror = () => {
+      setResultLoading(false);
+      es.close();
+      if (!receivedData) {
+        setResultError('Result not found — the file may have been deleted.');
+      }
+    };
+
+    return () => { es.close(); };
+  }, [resultModal]);
 
   const closeResultModal = () => {
     setResultModal(null);
