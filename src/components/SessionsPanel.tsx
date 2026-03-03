@@ -533,7 +533,9 @@ export const SessionsPanel = () => {
   }
 
   const dismissedCount = data.dismissed?.length || 0;
-  const totalActive = data.active.length + data.paused.length + data.exited.length;
+  const totalActive = data.active.length + data.paused.length;
+  const staleCount = data.exited.filter(s => s.interruptReason === 'timeout').length;
+  const interruptedCount = data.exited.filter(s => s.interruptReason !== 'timeout').length;
 
   if (totalActive === 0 && data.completed.length === 0) {
     return (
@@ -552,7 +554,12 @@ export const SessionsPanel = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Activity className="w-3.5 h-3.5" />
-          <span>{totalActive} active / {data.completed.length} done</span>
+          <span>
+            {totalActive} active
+            {staleCount > 0 && <> / {staleCount} stale</>}
+            {interruptedCount > 0 && <> / {interruptedCount} interrupted</>}
+            {' '}/ {data.completed.length} done
+          </span>
           {isLive && (
             <span className="inline-flex items-center gap-1 rounded-md bg-green-500/15 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:text-green-400">
               <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />

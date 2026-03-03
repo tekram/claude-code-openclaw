@@ -405,6 +405,44 @@ export function parseSessions(): SessionsData {
     }
   }
 
+  // Orphan activity detection: recover sessions where the SessionStart hook failed to
+  // write a log entry but PostToolUse is still firing (activity file is fresh).
+  {
+    const activeProjects = new Set(
+      allSessions.filter(s => s.status === 'active' || s.status === 'paused').map(s => s.project)
+    );
+    try {
+      const files = readdirSync(SESSION_OWNER_DIR).filter(f => f.endsWith('.activity'));
+      for (const file of files) {
+        const project = file.replace('.activity', '');
+        if (activeProjects.has(project)) continue;
+        try {
+          const data = JSON.parse(readFileSync(path.join(SESSION_OWNER_DIR, file), 'utf-8'));
+          const activityTs: number = data.ts || 0;
+          if (!activityTs || now - activityTs > STALE_THRESHOLD_MS) continue;
+          // Skip if a logged session exited MORE RECENTLY than this activity —
+          // means the process cleanly closed after the last tool call.
+          const newerExit = allSessions.find(s =>
+            s.project === project &&
+            s.status === 'exited' &&
+            s.endTime &&
+            parseTimestamp(s.endTime) > activityTs
+          );
+          if (newerExit) continue;
+          const actTimeStr = new Date(activityTs).toISOString();
+          allSessions.push({
+            project,
+            status: 'active',
+            startTime: actTimeStr,
+            lastActivityTime: actTimeStr,
+            details: data.activity || 'Active',
+            isWorking: now - activityTs < WORKING_THRESHOLD_MS,
+          });
+        } catch { /* skip corrupt activity file */ }
+      }
+    } catch { /* skip if dir unreadable */ }
+  }
+
   // 24-hour cutoff for old sessions
   const cutoff = now - HIDE_OLD_THRESHOLD_MS;
 
