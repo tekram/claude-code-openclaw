@@ -58,7 +58,7 @@ export function getReasonLabel(reason: InterruptReason): string {
     case 'superseded':
       return 'Superseded (moved to next phase)';
     case 'timeout':
-      return 'Timed out (inactive)';
+      return 'Went idle';
     case 'dismissed':
       return 'Dismissed';
     case 'unknown':

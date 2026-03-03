@@ -709,14 +709,53 @@ export const SessionsPanel = () => {
               })}
             </KanbanColumn>
 
-            {/* Interrupted */}
+            {/* Stale */}
+            <KanbanColumn
+              title="Stale"
+              icon={<Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />}
+              colorClass="text-muted-foreground"
+              count={data.exited.filter(s => s.interruptReason === 'timeout').length}
+            >
+              {data.exited.filter(s => s.interruptReason === 'timeout').map((session, i) => (
+                <KanbanCard
+                  key={`${session.project}-stale-${i}`}
+                  session={session}
+                  gitInfo={gitInfo[session.project]}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        className="ui-btn-icon h-5 w-5 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
+                        onClick={() => handleMarkDone(session.project)}
+                        disabled={actionLoading === session.project}
+                        title="Mark as done"
+                      >
+                        <Check className="w-2.5 h-2.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-btn-icon h-5 w-5 !bg-gray-500/20 hover:!bg-gray-500/30 text-gray-700 dark:text-gray-400"
+                        onClick={() => handleDismiss(session.project)}
+                        disabled={actionLoading === session.project}
+                        title="Dismiss"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </>
+                  }
+                  onViewOutput={(id) => setTaskOutputModal(id)}
+                />
+              ))}
+            </KanbanColumn>
+
+            {/* Interrupted (crash / kill / unknown) */}
             <KanbanColumn
               title="Interrupted"
               icon={<XCircle className="w-3 h-3 text-orange-600 dark:text-orange-400" />}
               colorClass="text-muted-foreground"
-              count={data.exited.length}
+              count={data.exited.filter(s => s.interruptReason !== 'timeout').length}
             >
-              {data.exited.map((session, i) => (
+              {data.exited.filter(s => s.interruptReason !== 'timeout').map((session, i) => (
                 <KanbanCard
                   key={`${session.project}-exited-${i}`}
                   session={session}
@@ -982,15 +1021,89 @@ export const SessionsPanel = () => {
           </div>
         )}
 
-        {/* Interrupted */}
-        {data.exited.length > 0 && (
+        {/* Stale (went idle / timed out) */}
+        {data.exited.filter(s => s.interruptReason === 'timeout').length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <p className="text-xs font-semibold text-muted-foreground">Stale</p>
+            </div>
+            <div className="space-y-2">
+              {data.exited.filter(s => s.interruptReason === 'timeout').map((session, i) => {
+                const ReasonIcon = session.interruptReason ? getReasonIcon(session.interruptReason) : Clock;
+                const reasonLabel = session.interruptReason ? getReasonLabel(session.interruptReason) : 'Unknown';
+                const colors = session.interruptReason ? getReasonColor(session.interruptReason) : {
+                  text: 'text-amber-700 dark:text-amber-400',
+                  bg: 'bg-amber-500/10',
+                  border: 'border-amber-500/20',
+                };
+                return (
+                  <div
+                    key={`${session.project}-stale-${i}`}
+                    className={`${colors.bg} border ${colors.border} rounded-md p-3 group`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{session.project}</p>
+                        <GitBadges gitInfo={gitInfo[session.project]} />
+                        <div className="flex items-center gap-1 mt-1">
+                          <ReasonIcon className={`w-3 h-3 ${colors.text}`} />
+                          <span className={`text-[10px] ${colors.text}`}>{reasonLabel}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
+                          {session.durationMs && (
+                            <span className="flex items-center gap-0.5">
+                              <Clock className="w-2.5 h-2.5" />
+                              {formatDuration(session.durationMs)}
+                            </span>
+                          )}
+                          {session.lastActivityTime && (
+                            <span>• {formatRelativeTime(session.lastActivityTime)}</span>
+                          )}
+                        </div>
+                        {session.details && (
+                          <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{session.details}</p>
+                        )}
+                        <SessionNotes notes={session.notes} onViewOutput={(id) => setTaskOutputModal(id)} />
+                        <SessionCommits project={session.project} startTime={session.startTime} endTime={session.endTime} startHash={session.startCommitHash} endHash={session.endCommitHash} />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="ui-btn-icon h-6 w-6 !bg-green-500/20 hover:!bg-green-500/30 text-green-700 dark:text-green-400"
+                          onClick={() => handleMarkDone(session.project)}
+                          disabled={actionLoading === session.project}
+                          title="Mark as done"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn-icon h-6 w-6 !bg-gray-500/20 hover:!bg-gray-500/30 text-gray-700 dark:text-gray-400"
+                          onClick={() => handleDismiss(session.project)}
+                          disabled={actionLoading === session.project}
+                          title="Dismiss"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Interrupted (crash / kill / unknown) */}
+        {data.exited.filter(s => s.interruptReason !== 'timeout').length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-2">
               <XCircle className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
               <p className="text-xs font-semibold text-muted-foreground">Interrupted</p>
             </div>
             <div className="space-y-2">
-              {data.exited.map((session, i) => {
+              {data.exited.filter(s => s.interruptReason !== 'timeout').map((session, i) => {
                 const ReasonIcon = session.interruptReason ? getReasonIcon(session.interruptReason) : XCircle;
                 const reasonLabel = session.interruptReason ? getReasonLabel(session.interruptReason) : 'Unknown';
                 const colors = session.interruptReason ? getReasonColor(session.interruptReason) : {
