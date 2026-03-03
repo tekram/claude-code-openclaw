@@ -116,8 +116,10 @@ async function dispatchClaude(body: {
   // Claude Code requires stdin:'inherit' — piping/ignoring stdin causes it to hang or exit 1.
   // windowsHide prevents a console window popping up on Windows.
   // No detached:true so we don't get a new console window; unref() keeps it independent.
+  const fullPrompt = `${task.trim()}\n\nWhen you are finished, output a final line in exactly this format (no bullet, no markdown):\nResult: <one sentence summary of what was accomplished>`;
+
   const proc = spawn('claude', [
-    '--print', task.trim(),
+    '--print', fullPrompt,
     '--dangerously-skip-permissions',
     '--output-format', 'stream-json',
     '--verbose',
