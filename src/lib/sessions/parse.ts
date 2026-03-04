@@ -363,8 +363,10 @@ export function parseSessions(): SessionsData {
             if (session.details?.startsWith('Permission needed:') || session.details === 'waiting for input') {
               session.details = '';
             }
-          } else if (owner.status === 'paused' && owner.ts && (now - owner.ts) > OWNER_FILE_PAUSED_STALE_MS) {
-            // Owner file has been stuck in paused for 10+ min — process was likely killed
+          } else if (owner.status === 'paused' && owner.ts && (now - owner.ts) > OWNER_FILE_PAUSED_STALE_MS
+              && !session.details?.startsWith('Permission needed:')) {
+            // Owner file has been stuck in paused for 10+ min — process was likely killed.
+            // Skip for "Permission needed:" pauses — those legitimately wait hours for user approval.
             session.status = 'exited';
             session.endTime = session.lastActivityTime || session.startTime;
             session.interruptReason = 'timeout';
@@ -382,7 +384,11 @@ export function parseSessions(): SessionsData {
     if (session.status === 'active' || session.status === 'paused') {
       const lastMs = parseTimestamp(session.lastActivityTime || session.startTime);
       const inactiveMs = now - lastMs;
-      const threshold = session.status === 'paused' ? PAUSED_STALE_THRESHOLD_MS : STALE_THRESHOLD_MS;
+      // "Permission needed:" pauses can wait hours for user approval — use the 4h active threshold.
+      const isPermissionPause = session.status === 'paused' && session.details?.startsWith('Permission needed:');
+      const threshold = isPermissionPause ? STALE_THRESHOLD_MS
+        : session.status === 'paused' ? PAUSED_STALE_THRESHOLD_MS
+        : STALE_THRESHOLD_MS;
 
       // Phantom sessions: started but never had any post-start events (lastActivityTime === startTime).
       // The SessionEnd hook likely never fired (process crashed or exited immediately).
