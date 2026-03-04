@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { NotificationSettings } from '@/components/NotificationSettings';
 import { ProjectSettings } from '@/components/ProjectSettings';
+import { TaskCleanup } from '@/components/TaskCleanup';
 
 export default function SettingsPage() {
   return (
@@ -26,6 +27,15 @@ export default function SettingsPage() {
               Project Paths
             </div>
             <ProjectSettings />
+          </div>
+
+          <div>
+            <div className="mb-1 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Task Results
+            </div>
+            <div className="px-4">
+              <TaskCleanup />
+            </div>
           </div>
         </div>
       </div>
