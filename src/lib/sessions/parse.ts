@@ -425,7 +425,10 @@ export function parseSessions(): SessionsData {
         try {
           const data = JSON.parse(readFileSync(path.join(SESSION_OWNER_DIR, file), 'utf-8'));
           const activityTs: number = data.ts || 0;
-          if (!activityTs || now - activityTs > STALE_THRESHOLD_MS) continue;
+          // Orphans are only valid when PostToolUse is actively firing — use the activity
+          // stale threshold (5 min). A 4-hour window would surface stale cwd-drift artifacts
+          // from sessions that changed directories mid-session (now tracked via session-id map).
+          if (!activityTs || now - activityTs > ACTIVITY_STALE_MS) continue;
           // Skip if a logged session exited MORE RECENTLY than this activity —
           // means the process cleanly closed after the last tool call.
           const newerExit = allSessions.find(s =>
