@@ -310,26 +310,49 @@ export function parseSessions(): SessionsData {
 
   const now = Date.now();
 
-  // Owner-file deduplication: if an active/paused session's session suffix doesn't match
-  // the current owner file, a newer session has claimed the project and this one is stale.
-  // This catches crashes/kills where SessionEnd never fired (no EXIT in the log).
+  // Owner-file deduplication: each active session writes its own per-session file
+  // {project}#{suffix}.json. If that file is missing but another session for the same
+  // project has one, this session was superseded (crashed without logging EXIT).
+  // Legacy fallback: if no suffixed files exist, check the old {project}.json format.
+  let ownerDirFiles: string[] = [];
+  try { ownerDirFiles = existsSync(SESSION_OWNER_DIR) ? readdirSync(SESSION_OWNER_DIR) : []; } catch { /* ignore */ }
+
   for (const session of allSessions) {
     if ((session.status === 'active' || session.status === 'paused') && session.sessionSuffix) {
       try {
-        const ownerPath = path.join(SESSION_OWNER_DIR, `${session.project}.json`);
-        if (existsSync(ownerPath)) {
-          const owner = JSON.parse(readFileSync(ownerPath, 'utf-8'));
-          if (owner.sessionId) {
-            const ownerSuffix = (owner.sessionId as string).replace(/[^a-zA-Z0-9]/g, '').substring(0, 6);
-            if (ownerSuffix !== session.sessionSuffix) {
-              session.status = 'exited';
-              session.endTime = session.lastActivityTime || session.startTime;
-              session.interruptReason = 'superseded';
-              session.durationMs = calculateDuration(session.startTime, session.endTime);
-              session.details = 'superseded by new session';
+        const sessionOwnerFile = `${session.project}#${session.sessionSuffix}.json`;
+        const sessionOwnerPath = path.join(SESSION_OWNER_DIR, sessionOwnerFile);
+        if (!existsSync(sessionOwnerPath)) {
+          // Per-session file missing — check if any OTHER suffixed file exists for this project.
+          const anyOtherOwner = ownerDirFiles.some(
+            f => f !== sessionOwnerFile && f.startsWith(`${session.project}#`) && f.endsWith('.json')
+          );
+          if (anyOtherOwner) {
+            // A different session owns this project → this one was superseded
+            session.status = 'exited';
+            session.endTime = session.lastActivityTime || session.startTime;
+            session.interruptReason = 'superseded';
+            session.durationMs = calculateDuration(session.startTime, session.endTime);
+            session.details = 'superseded by new session';
+          } else {
+            // No suffixed files — fall back to legacy {project}.json check
+            const legacyPath = path.join(SESSION_OWNER_DIR, `${session.project}.json`);
+            if (existsSync(legacyPath)) {
+              const owner = JSON.parse(readFileSync(legacyPath, 'utf-8'));
+              if (owner.sessionId) {
+                const ownerSuffix = (owner.sessionId as string).replace(/[^a-zA-Z0-9]/g, '').substring(0, 6);
+                if (ownerSuffix !== session.sessionSuffix) {
+                  session.status = 'exited';
+                  session.endTime = session.lastActivityTime || session.startTime;
+                  session.interruptReason = 'superseded';
+                  session.durationMs = calculateDuration(session.startTime, session.endTime);
+                  session.details = 'superseded by new session';
+                }
+              }
             }
           }
         }
+        // If sessionOwnerPath exists → this session is live, no action needed
       } catch { /* ignore */ }
     }
   }
@@ -353,7 +376,10 @@ export function parseSessions(): SessionsData {
   for (const session of allSessions) {
     if (session.status === 'paused') {
       try {
-        const ownerPath = path.join(SESSION_OWNER_DIR, `${session.project}.json`);
+        // Use per-session file if suffix available (new format), else fall back to legacy file.
+        const ownerPath = session.sessionSuffix
+          ? path.join(SESSION_OWNER_DIR, `${session.project}#${session.sessionSuffix}.json`)
+          : path.join(SESSION_OWNER_DIR, `${session.project}.json`);
         if (existsSync(ownerPath)) {
           const owner = JSON.parse(readFileSync(ownerPath, 'utf-8'));
           const pausedAt = parseTimestamp(session.lastActivityTime || session.startTime);
