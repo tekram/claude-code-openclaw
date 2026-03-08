@@ -22,6 +22,7 @@ export interface SessionCommit {
   message: string;
   authorDate: string; // ISO 8601
   githubUrl: string | null;
+  pushed: boolean;    // false = local-only commit, not yet on any remote
   pr: CommitPR | null;
 }
 
@@ -68,6 +69,20 @@ async function getRepoInfo(
     return parseRemoteUrl(stdout);
   } catch {
     return null;
+  }
+}
+
+/** Returns hashes of commits that exist locally but have not been pushed to any remote. */
+async function getLocalOnlyHashes(projectPath: string): Promise<Set<string>> {
+  try {
+    const { stdout } = await execAsync('git log --format=%H --not --remotes', {
+      cwd: projectPath,
+      timeout: EXEC_TIMEOUT,
+    });
+    const hashes = stdout.split('\n').map((h) => h.trim()).filter((h) => h.length === 40);
+    return new Set(hashes);
+  } catch {
+    return new Set(); // If the command fails, assume all commits are pushed
   }
 }
 
@@ -140,8 +155,11 @@ export async function GET(req: Request) {
       return { hash: hash?.trim() ?? '', message: message?.trim() ?? '', authorDate: authorDate?.trim() ?? '' };
     }).filter((c) => c.hash.length === 40);
 
-    // Resolve remote / GitHub URL
-    const repoInfo = await getRepoInfo(projectPath);
+    // Resolve remote / GitHub URL + find local-only (unpushed) commits in parallel
+    const [repoInfo, localOnlyHashes] = await Promise.all([
+      getRepoInfo(projectPath),
+      getLocalOnlyHashes(projectPath),
+    ]);
     const githubBaseUrl = repoInfo?.baseUrl ?? null;
     const repoSlug = repoInfo?.slug ?? null;
 
@@ -158,7 +176,11 @@ export async function GET(req: Request) {
       shortHash: c.hash.substring(0, 7),
       message: c.message,
       authorDate: c.authorDate,
-      githubUrl: githubBaseUrl ? `${githubBaseUrl}/commit/${c.hash}` : null,
+      // Only link to GitHub if the commit has been pushed (exists on remote)
+      githubUrl: (githubBaseUrl && !localOnlyHashes.has(c.hash))
+        ? `${githubBaseUrl}/commit/${c.hash}`
+        : null,
+      pushed: !localOnlyHashes.has(c.hash),
       pr: i < COMMIT_PR_LIMIT && prResults[i]?.status === 'fulfilled'
         ? (prResults[i] as PromiseFulfilledResult<CommitPR | null>).value
         : null,

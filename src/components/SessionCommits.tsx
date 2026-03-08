@@ -26,7 +26,7 @@ function CommitRow({ commit }: { commit: SessionCommit }) {
     <div className="flex items-start gap-1.5 py-0.5 group/commit">
       <GitCommitHorizontal className="w-3 h-3 mt-0.5 shrink-0 text-muted-foreground/60" />
 
-      {/* Hash — links to GitHub commit */}
+      {/* Hash — links to GitHub if pushed, plain text if local-only */}
       {commit.githubUrl ? (
         <a
           href={commit.githubUrl}
@@ -39,7 +39,13 @@ function CommitRow({ commit }: { commit: SessionCommit }) {
           <ExternalLink className="w-2 h-2 opacity-0 group-hover/commit:opacity-100 transition-opacity" />
         </a>
       ) : (
-        <code className="font-mono text-[10px] text-muted-foreground shrink-0">{commit.shortHash}</code>
+        <code
+          className="font-mono text-[10px] text-muted-foreground shrink-0"
+          title={!commit.pushed ? `Local commit — not yet pushed to remote` : commit.hash}
+        >
+          {commit.shortHash}
+          {!commit.pushed && <span className="ml-0.5 text-yellow-500/70">↑</span>}
+        </code>
       )}
 
       {/* Message */}
@@ -146,18 +152,30 @@ export function SessionCommits({ project, startTime, endTime, startHash, endHash
           {data.commits.map((c) => (
             <CommitRow key={c.hash} commit={c} />
           ))}
-          {/* Link to compare view on GitHub if we have the base URL */}
-          {data.githubBaseUrl && (
-            <a
-              href={`${data.githubBaseUrl}/commits`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground mt-1 pl-4 transition-colors"
-            >
-              <ExternalLink className="w-2.5 h-2.5" />
-              View on GitHub
-            </a>
-          )}
+          {/* Link to compare view on GitHub — only if we have pushed commits */}
+          {data.githubBaseUrl && (() => {
+            const base = data.githubBaseUrl;
+            const pushedCommits = data.commits.filter((c) => c.pushed);
+            if (pushedCommits.length === 0) return null; // all local-only, no GitHub link
+            // Build a compare URL using the pushed range end; fall back to commits list
+            const rangeEnd = (endHash && data.commits[0]?.pushed)
+              ? endHash
+              : (pushedCommits.length > 0 ? pushedCommits[0].hash : null);
+            const href = (startHash && rangeEnd && startHash !== rangeEnd)
+              ? `${base}/compare/${startHash}...${rangeEnd}`
+              : `${base}/commits`;
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground mt-1 pl-4 transition-colors"
+              >
+                <ExternalLink className="w-2.5 h-2.5" />
+                View on GitHub
+              </a>
+            );
+          })()}
         </div>
       )}
     </div>
